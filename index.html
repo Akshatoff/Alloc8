@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full bg-gray-900">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Alloc8 - Humanitarian Logistics AI</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Leaflet.js for Maps -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+        integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+        crossorigin="" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+        integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+        crossorigin=""></script>
+    <!-- Lucide Icons (Correct UMD build) -->
+    <script src="https://unpkg.com/lucide@0.395.0/dist/umd/lucide.min.js"></script>
+    <link rel="stylesheet" href="style/style.css">
+</head>
+
+<body class="h-full-flex text-gray-200">
+    <!-- Header -->
+    <header class="bg-gray-950 p-4 shadow-md flex justify-between items-center z-20">
+        <div class="flex items-center space-x-3">
+            <i data-lucide="waypoints" class="text-blue-400 w-8 h-8"></i>
+            <h1 class="text-2xl font-bold text-white">Alloc8</h1>
+        </div>
+        <div id="user-id-display" class="text-xs text-gray-500">Connecting...</div>
+    </header>
+
+    <!-- Main Loader -->
+    <div id="main-loader" class="flex-grow flex items-center justify-center hidden">
+        <div class="loader"></div>
+    </div>
+
+    <!-- Main Content -->
+    <main id="main-content" class="flex-grow overflow-y-auto p-4 md:p-8 hidden">
+        <div class="max-w-4xl mx-auto">
+
+            <!-- Page 1: Initial Input -->
+            <section id="input-page" class="page-section space-y-6">
+                <h2 class="text-3xl font-semibold text-white">Describe the Crisis</h2>
+                <p class="text-gray-400">
+                    Provide a free-form text description of the humanitarian situation. The AI will analyze your report,
+                    augment it with real-time data, and ask follow-up questions to build a logistics plan.
+                </p>
+                <textarea id="crisis-description" rows="10"
+                    class="w-full p-4 bg-gray-800 border border-gray-700 rounded-lg text-gray-200 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    placeholder="e.g., 'Large-scale flooding reported in the coastal regions of Country X following Cyclone Y. Bridges are down, and communication is intermittent. Need immediate assessment for food and water distribution...'">
+                </textarea>
+                <button id="start-analysis-btn"
+                    class="w-full flex items-center justify-center space-x-2 bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-lg transition duration-200">
+                    <i data-lucide="bar-chart-big"></i>
+                    <span>Start AI Analysis</span>
+                </button>
+            </section>
+
+            <!-- Page 2: AI Chat -->
+            <section id="chat-page" class="page-section hidden">
+                <h2 class="text-3xl font-semibold text-white mb-4">AI Data Collection</h2>
+                <div id="chat-log" class="h-96 bg-gray-800 rounded-lg p-4 flex flex-col space-y-2 overflow-y-auto mb-4 border border-gray-700">
+                    <!-- Chat messages will be appended here -->
+                </div>
+                <div id="chat-input-container" class="flex space-x-2 hidden">
+                    <input type="text" id="chat-input"
+                        class="flex-grow p-3 bg-gray-700 border border-gray-600 rounded-lg text-gray-200 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        placeholder="Type your answer...">
+                    <button id="chat-send-btn"
+                        class="bg-blue-600 hover:bg-blue-700 text-white p-3 rounded-lg transition duration-200">
+                        <i data-lucide="send"></i>
+                    </button>
+                </div>
+                <button id="proceed-to-params-btn"
+                    class="w-full mt-4 flex items-center justify-center space-x-2 bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-6 rounded-lg transition duration-200 hidden">
+                    <i data-lucide="arrow-right-circle"></i>
+                    <span>Proceed to Optimization</span>
+                </button>
+            </section>
+
+            <!-- Page 3: Optimization Parameters -->
+            <section id="params-page" class="page-section hidden space-y-6">
+                <h2 class="text-3xl font-semibold text-white">Select Optimization Strategy</h2>
+                <p class="text-gray-400">
+                    Based on the collected data, choose the core logic for the distribution plan. The AI will generate an
+                    optimal plan based on your selection.
+                </p>
+                <div class="space-y-4">
+                    <label
+                        class="flex items-center p-4 bg-gray-800 border border-gray-700 rounded-lg cursor-pointer hover:bg-gray-700 transition">
+                        <input type="radio" name="strategy" value="max_welfare" class="form-radio h-5 w-5 text-blue-500 bg-gray-900 border-gray-600" checked>
+                        <div class="ml-4">
+                            <h3 class="font-semibold text-lg text-white">Maximum Welfare</h3>
+                            <p class="text-gray-400 text-sm">Distributes resources to maximize the overall well-being
+                                and cover the largest possible population.</p>
+                        </div>
+                    </label>
+                    <label
+                        class="flex items-center p-4 bg-gray-800 border border-gray-700 rounded-lg cursor-pointer hover:bg-gray-700 transition">
+                        <input type="radio" name="strategy" value="most_need" class="form-radio h-5 w-5 text-blue-500 bg-gray-900 border-gray-600">
+                        <div class="ml-4">
+                            <h3 class="font-semibold text-lg text-white">Most Need (Equity)</h3>
+                            <p class="text-gray-400 text-sm">Prioritizes the most vulnerable and critically affected
+                                locations first, even if less efficient.</p>
+                        </div>
+                    </label>
+                    <label
+                        class="flex items-center p-4 bg-gray-800 border border-gray-700 rounded-lg cursor-pointer hover:bg-gray-700 transition">
+                        <input type="radio" name="strategy" value="fastest" class="form-radio h-5 w-5 text-blue-500 bg-gray-900 border-gray-600">
+                        <div class="ml-4">
+                            <h3 class="font-semibold text-lg text-white">Fastest Results</h3>
+                            <p class="text-gray-400 text-sm">Optimizes for speed, using the fastest available routes
+                                and distributing to the most accessible locations first.</p>
+                        </div>
+                    </label>
+                </div>
+                <button id="generate-plan-btn"
+                    class="w-full flex items-center justify-center space-x-2 bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-lg transition duration-200">
+                    <i data-lucide="cogs"></i>
+                    <span>Generate Optimal Plan</span>
+                </button>
+            </section>
+
+            <!-- Page 4: The Plan -->
+            <section id="plan-page" class="page-section hidden space-y-6">
+                <h2 class="text-3xl font-semibold text-white">Generated Distribution Plan</h2>
+
+                <!-- Plan Loader -->
+                <div id="plan-loader" class="flex flex-col items-center justify-center h-96 text-gray-400">
+                    <div class="loader"></div>
+                    <p class="mt-4 text-lg">Running optimizations...</p>
+                    <p class="text-sm">(This is a simulation of complex non-linear optimization)</p>
+                </div>
+
+                <!-- Plan Output -->
+                <div id="plan-output" class="hidden space-y-8">
+                    <div class="flex justify-between items-center">
+                        <div id="plan-strategy" class="text-xl font-semibold text-blue-400"></div>
+                        <button id="save-plan-btn"
+                            class="flex items-center space-x-2 bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg transition duration-200">
+                            <i data-lucide="save"></i>
+                            <span>Save Plan</span>
+                        </button>
+                    </div>
+                    <div id="plan-id-display" class="text-sm text-gray-500"></div>
+
+                    <!-- Summary -->
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div class="bg-gray-800 p-4 rounded-lg border border-gray-700">
+                            <h4 class="text-sm font-medium text-gray-400 uppercase">Total Distribution Time</h4>
+                            <p id="plan-time" class="text-2xl font-bold text-white"></p>
+                        </div>
+                        <div class="bg-gray-800 p-4 rounded-lg border border-gray-700">
+                            <h4 class="text-sm font-medium text-gray-400 uppercase">Land Transport</h4>
+                            <p id="plan-land" class="text-2xl font-bold text-white"></p>
+                        </div>
+                        <div class="bg-gray-800 p-4 rounded-lg border border-gray-700">
+                            <h4 class="text-sm font-medium text-gray-400 uppercase">Air Transport</h4>
+                            <p id="plan-air" class="text-2xl font-bold text-white"></p>
+                        </div>
+                    </div>
+
+                    <!-- Map -->
+                    <div>
+                        <h3 class="text-xl font-semibold text-white mb-2">Optimal Paths</h3>
+                        <div id="map"></div>
+                    </div>
+
+                    <!-- Resource Ledger -->
+                    <div>
+                        <h3 class="text-xl font-semibold text-white mb-2">Resource Ledger</h3>
+                        <div class="bg-gray-800 rounded-lg border border-gray-700 overflow-hidden">
+                            <table class="min-w-full divide-y divide-gray-700">
+                                <thead class="bg-gray-800">
+                                    <tr>
+                                        <th class="py-3 px-4 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Location</th>
+                                        <th class="py-3 px-4 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Resource</th>
+                                        <th class="py-3 px-4 text-right text-xs font-medium text-gray-400 uppercase tracking-wider">Quantity</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="ledger-body" class="divide-y divide-gray-700">
+                                    <!-- Rows will be injected here -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                </div>
+            </section>
+
+        </div>
+    </main>
+
+    <script type="module" src="script/script.js"></script>
+</body>
+</html>
