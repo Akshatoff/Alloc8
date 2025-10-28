@@ -1,60 +1,102 @@
 /* Custom styles */
 body {
-    font-family: 'Inter', sans-serif;
+  font-family: "Inter", sans-serif;
 }
 .h-full-flex {
-    height: 100vh;
-    display: flex;
-    flex-direction: column;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
 }
 #map {
-    height: 400px;
-    width: 100%;
-    border-radius: 0.5rem;
-    z-index: 10;
+  height: 400px;
+  width: 100%;
+  border-radius: 0.5rem;
+  z-index: 10;
 }
 .leaflet-container {
-    background: #4b5563; /* gray-600 */
+  background: #4b5563; /* gray-600 */
 }
 .chat-bubble {
-    max-width: 80%;
-    padding: 0.75rem 1rem;
-    border-radius: 0.75rem;
-    margin-bottom: 0.5rem;
+  max-width: 80%;
+  padding: 0.75rem 1rem;
+  border-radius: 0.75rem;
+  margin-bottom: 0.5rem;
 }
 .chat-bubble-user {
-    background-color: #2563eb; /* blue-600 */
-    color: white;
-    align-self: flex-end;
-    border-bottom-right-radius: 0.25rem;
+  background-color: #2563eb; /* blue-600 */
+  color: white;
+  align-self: flex-end;
+  border-bottom-right-radius: 0.25rem;
 }
 .chat-bubble-ai {
-    background-color: #4b5563; /* gray-600 */
-    color: white;
-    align-self: flex-start;
-    border-bottom-left-radius: 0.25rem;
+  background-color: #4b5563; /* gray-600 */
+  color: white;
+  align-self: flex-start;
+  border-bottom-left-radius: 0.25rem;
 }
 .chat-bubble-system {
-    background-color: #1f2937; /* gray-800 */
-    color: #d1d5db; /* gray-300 */
-    align-self: center;
-    width: 100%;
-    max-width: 100%;
-    font-size: 0.875rem;
-    border: 1px solid #374151; /* gray-700 */
+  background-color: #1f2937; /* gray-800 */
+  color: #d1d5db; /* gray-300 */
+  align-self: center;
+  width: 100%;
+  max-width: 100%;
+  font-size: 0.875rem;
+  border: 1px solid #374151; /* gray-700 */
 }
 .chat-bubble-system strong {
-    color: #60a5fa; /* blue-400 */
+  color: #60a5fa; /* blue-400 */
 }
 .loader {
-    border: 4px solid #4b5563; /* gray-600 */
-    border-top: 4px solid #3b82f6; /* blue-500 */
-    border-radius: 50%;
-    width: 40px;
-    height: 40px;
-    animation: spin 1s linear infinite;
+  border: 4px solid #4b5563; /* gray-600 */
+  border-top: 4px solid #3b82f6; /* blue-500 */
+  border-radius: 50%;
+  width: 40px;
+  height: 40px;
+  animation: spin 1s linear infinite;
 }
 @keyframes spin {
-    0% { transform: rotate(0deg); }
-    100% { transform: rotate(360deg); }
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+}
+::-webkit-scrollbar-track {
+  background: #1f2937; /* gray-800 */
+}
+::-webkit-scrollbar-thumb {
+  background: #4b5563; /* gray-600 */
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #6b7280; /* gray-500 */
+}
+
+/* Simple loader animation */
+.loader {
+  border: 4px solid #4b5563; /* gray-600 */
+  border-top: 4px solid #3b82f6; /* blue-500 */
+  border-radius: 50%;
+  width: 40px;
+  height: 40px;
+  animation: spin 1s linear infinite;
+}
+@keyframes spin {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+/* Page transition (simple fade) */
+.page-section {
+  transition: opacity 0.3s ease-in-out;
 }
