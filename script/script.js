@@ -138,28 +138,30 @@ function addChatMessage(sender, text) {
     case "user":
       bgColor = "bg-blue-600";
       textColor = "text-white";
-      align = "self-end";
+      align = "flex justify-end";
       senderName = "You";
       break;
     case "ai":
       bgColor = "bg-gray-700";
       textColor = "text-gray-200";
-      align = "self-start";
-      senderName = "Alloc8 AI";
+      align = "flex justify-start";
+      senderName = "Situational Insight Engine";
       break;
     default: // system
-      bgColor = "bg-gray-800";
+      bgColor = "bg-[#800000]";
       textColor = "text-yellow-400";
-      align = "self-center";
-      senderName = "System";
+      align = "flex justify-center";
+      senderName = "Augmented Real-Time Data Stream (Including Satellite Sources)";
       break;
   }
 
-  messageEl.className = `w-full max-w-lg p-3 my-2 rounded-lg ${bgColor} ${textColor} ${align} shadow-md`;
+  const wrapperDiv = document.createElement("div");
+  wrapperDiv.className = `w-full ${align}`;
+  messageEl.className = `max-w-lg p-3 my-2 rounded-lg ${bgColor} ${textColor} shadow-md`;
   messageEl.innerHTML = `<strong class="block text-sm">${senderName}</strong><p>${text}</p>`;
 
-  chatMessages.appendChild(messageEl);
-  chatMessages.scrollTop = chatMessages.scrollHeight; // Auto-scroll
+  wrapperDiv.appendChild(messageEl);
+  chatMessages.appendChild(wrapperDiv);-scroll
 }
 
 /**
@@ -341,9 +343,12 @@ async function handleInitialAnalysis() {
           .join("<br>");
     }
 
+    const processedAugmentData = augmentData.text
+      .replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>") // Replace markdown bold **text**
+      .replace(/\n/g, "<br>"); // Replace newlines
     addChatMessage(
-      "system",
-      `**Augmented Data (Live Search):**\n${augmentData.text.replace(/\n/g, "<br>")}${sourcesText}`,
+      "Augmented Real-Time Data Stream (Including Satellite Sources)",
+      `<strong>Augmented Data (Live Search):</strong><br>${processedAugmentData}${sourcesText}`,
     );
     chatHistory.push({ role: "model", parts: [{ text: augmentData.text }] });
     collectedData.augmentedData = augmentData.text;
@@ -354,11 +359,11 @@ async function handleInitialAnalysis() {
 
     const systemPromptQuestions = `You are an AI assistant gathering critical data for a resource distribution plan. Based on this context, you MUST generate 5 critical follow-up questions.
          The questions must be programmatic and cover:
-         1.  **Specific Locations:** (e.g., "What are the exact neighborhoods or GPS coordinates of the affected zones?")
-         2.  **Resource Needs (Specifics):** (e.g., "What are the specific resource needs? Please list items and quantities, like 'water: 5000L, food: 10000 units, medical kits: 500'.")
-         3.  **Transport Logistics:** (e.g., "What is the on-ground condition of the main airport (code XXX) and highway Y?")
-         4.  **Affected Population (Specifics):** (e.g., "What are the estimated numbers at specific rally points or shelters?")
-         5.  **Local Assets:** (e.g., "Are there any local warehouses, distribution partners, or supply depots still intact?")
+         1.  <strong>Specific Locations:</strong> (e.g., "What are the exact neighborhoods or GPS coordinates of the affected zones?")
+         2.  <strong>Resource Needs (Specifics):</strong> (e.g., "What are the specific resource needs? Please list items and quantities, like 'water: 5000L, food: 10000 units, medical kits: 500'.")
+         3.  <strong>Transport Logistics:</strong> (e.g., "What is the on-ground condition of the main airport (code XXX) and highway Y?")
+         4.  <strong>Affected Population (Specifics):</strong> (e.g., "What are the estimated numbers at specific rally points or shelters?")
+         5.  <strong>Local Assets:</strong>(e.g., "Are there any local warehouses, distribution partners, or supply depots still intact?")
 
          Respond with ONLY a valid JSON array of strings. Do not include "'''json" or any other text.
          Example:
@@ -496,7 +501,7 @@ async function handleUserMessage() {
 
       addChatMessage(
         "ai",
-        `**Data Summary:**<br>${answerData.text.replace(/\n/g, "<br>")}`,
+        `<strong>Data Summary:</strong><br>${answerData.text.replace(/\n/g, "<br>")}`,
       );
       chatHistory.push({ role: "model", parts: [{ text: answerData.text }] });
       collectedData.finalSummary = answerData.text;
