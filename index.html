@@ -4,28 +4,23 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Alloc8 - AI Wrapper : Context Awareness</title>
-    <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- Leaflet Maps -->
     <link
       rel="stylesheet"
       href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
-      integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
       crossorigin=""
     />
     <script
       src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
-      integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
       crossorigin=""
     ></script>
-    <!-- Lucide Icons -->
     <script src="https://unpkg.com/lucide@latest"></script>
     <link rel="stylesheet" href="style/style.css" />
   </head>
 
   <body class="h-full bg-gray-900 text-gray-200 font-sans antialiased">
     <div class="relative flex h-full min-h-screen">
-      <!-- Sidebar for Saved Plans -->
+      <!-- Sidebar -->
       <aside
         id="sidebar"
         class="absolute z-20 h-full w-72 bg-gray-950/90 backdrop-blur-sm border-r border-gray-700 p-4 transition-transform transform -translate-x-full md:relative md:translate-x-0"
@@ -34,14 +29,12 @@
         <p class="text-sm text-blue-400 mb-4" id="user-id-display">
           User ID: loading...
         </p>
-
         <h3 class="text-lg font-semibold text-gray-300 mb-3">Saved Plans</h3>
         <div
           id="saved-plans-list"
           class="space-y-3 overflow-y-auto"
           style="max-height: calc(100vh - 120px)"
         >
-          <!-- Plans will be loaded here by Firestore -->
           <p class="text-gray-500">Loading saved plans...</p>
         </div>
       </aside>
@@ -54,7 +47,6 @@
         >
           <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div class="flex justify-between items-center h-16">
-              <!-- Mobile Sidebar Toggle -->
               <button
                 id="toggle-sidebar-btn"
                 class="md:hidden p-2 rounded-md text-gray-400 hover:text-white hover:bg-gray-700"
@@ -62,16 +54,13 @@
                 <i data-lucide="menu"></i>
               </button>
               <div class="flex-grow"></div>
-              <!-- Spacer -->
               <h1
                 class="text-4xl font-bold text-center text-white hidden sm:block"
               >
-                AI Wrapper : Context Awareness
+                AI Crisis Management
               </h1>
               <div class="flex-grow"></div>
-              <!-- Spacer -->
               <div class="w-10"></div>
-              <!-- Placeholder to balance toggle button -->
             </div>
           </div>
         </header>
@@ -79,45 +68,413 @@
         <!-- Page Sections -->
         <div class="flex-1 overflow-y-auto p-4 md:p-8">
           <div class="max-w-4xl mx-auto">
-            <!-- ===== 1. Entry Page ===== -->
-            <section id="entry-page" class="page-section space-y-3">
-              <h2 class="text-2xl font-semibold text-white">
-                Describe the Crisis
+            <!-- ===== 1. Form Page ===== -->
+            <section id="form-page" class="page-section space-y-6">
+              <h2 class="text-3xl font-semibold text-white mb-2">
+                Crisis Information Form
               </h2>
+              <p class="text-lg text-gray-400 mb-6">
+                Please fill out the following structured form to provide initial
+                crisis data.
+              </p>
+
+              <form id="crisis-form" class="space-y-6">
+                <!-- Question 1: Incident Type -->
+                <div class="bg-gray-800 p-6 rounded-lg border border-gray-700">
+                  <label class="block text-lg font-semibold text-white mb-3"
+                    >1. Type of Incident
+                    <span class="text-red-500">*</span></label
+                  >
+                  <div class="space-y-2">
+                    <label
+                      class="flex items-center p-3 bg-gray-700 rounded-lg cursor-pointer hover:bg-gray-600 transition"
+                    >
+                      <input
+                        type="radio"
+                        name="incident_type"
+                        value="earthquake"
+                        class="mr-3 w-4 h-4"
+                        required
+                      />
+                      <span>Earthquake</span>
+                    </label>
+                    <label
+                      class="flex items-center p-3 bg-gray-700 rounded-lg cursor-pointer hover:bg-gray-600 transition"
+                    >
+                      <input
+                        type="radio"
+                        name="incident_type"
+                        value="flood"
+                        class="mr-3 w-4 h-4"
+                      />
+                      <span>Flood</span>
+                    </label>
+                    <label
+                      class="flex items-center p-3 bg-gray-700 rounded-lg cursor-pointer hover:bg-gray-600 transition"
+                    >
+                      <input
+                        type="radio"
+                        name="incident_type"
+                        value="hurricane"
+                        class="mr-3 w-4 h-4"
+                      />
+                      <span>Hurricane/Cyclone</span>
+                    </label>
+                    <label
+                      class="flex items-center p-3 bg-gray-700 rounded-lg cursor-pointer hover:bg-gray-600 transition"
+                    >
+                      <input
+                        type="radio"
+                        name="incident_type"
+                        value="wildfire"
+                        class="mr-3 w-4 h-4"
+                      />
+                      <span>Wildfire</span>
+                    </label>
+                    <label
+                      class="flex items-center p-3 bg-gray-700 rounded-lg cursor-pointer hover:bg-gray-600 transition"
+                    >
+                      <input
+                        type="radio"
+                        name="incident_type"
+                        value="other"
+                        class="mr-3 w-4 h-4"
+                      />
+                      <span>Other</span>
+                    </label>
+                  </div>
+                </div>
+
+                <!-- Question 2: Estimated Scale -->
+                <div class="bg-gray-800 p-6 rounded-lg border border-gray-700">
+                  <label class="block text-lg font-semibold text-white mb-3"
+                    >2. Estimated Scale of Impact
+                    <span class="text-red-500">*</span></label
+                  >
+                  <div class="space-y-2">
+                    <label
+                      class="flex items-center p-3 bg-gray-700 rounded-lg cursor-pointer hover:bg-gray-600 transition"
+                    >
+                      <input
+                        type="radio"
+                        name="scale"
+                        value="localized"
+                        class="mr-3 w-4 h-4"
+                        required
+                      />
+                      <span>Localized (Single neighborhood/district)</span>
+                    </label>
+                    <label
+                      class="flex items-center p-3 bg-gray-700 rounded-lg cursor-pointer hover:bg-gray-600 transition"
+                    >
+                      <input
+                        type="radio"
+                        name="scale"
+                        value="city"
+                        class="mr-3 w-4 h-4"
+                      />
+                      <span>City-wide</span>
+                    </label>
+                    <label
+                      class="flex items-center p-3 bg-gray-700 rounded-lg cursor-pointer hover:bg-gray-600 transition"
+                    >
+                      <input
+                        type="radio"
+                        name="scale"
+                        value="regional"
+                        class="mr-3 w-4 h-4"
+                      />
+                      <span>Regional (Multiple cities/counties)</span>
+                    </label>
+                    <label
+                      class="flex items-center p-3 bg-gray-700 rounded-lg cursor-pointer hover:bg-gray-600 transition"
+                    >
+                      <input
+                        type="radio"
+                        name="scale"
+                        value="national"
+                        class="mr-3 w-4 h-4"
+                      />
+                      <span>National</span>
+                    </label>
+                  </div>
+                </div>
+
+                <!-- Question 3: Infrastructure Status -->
+                <div class="bg-gray-800 p-6 rounded-lg border border-gray-700">
+                  <label class="block text-lg font-semibold text-white mb-3"
+                    >3. Critical Infrastructure Status
+                    <span class="text-red-500">*</span></label
+                  >
+                  <div class="space-y-2">
+                    <label
+                      class="flex items-center p-3 bg-gray-700 rounded-lg cursor-pointer hover:bg-gray-600 transition"
+                    >
+                      <input
+                        type="radio"
+                        name="infrastructure"
+                        value="fully_operational"
+                        class="mr-3 w-4 h-4"
+                        required
+                      />
+                      <span
+                        >Fully Operational (Roads, airports, ports
+                        accessible)</span
+                      >
+                    </label>
+                    <label
+                      class="flex items-center p-3 bg-gray-700 rounded-lg cursor-pointer hover:bg-gray-600 transition"
+                    >
+                      <input
+                        type="radio"
+                        name="infrastructure"
+                        value="partially_damaged"
+                        class="mr-3 w-4 h-4"
+                      />
+                      <span>Partially Damaged (Some routes blocked)</span>
+                    </label>
+                    <label
+                      class="flex items-center p-3 bg-gray-700 rounded-lg cursor-pointer hover:bg-gray-600 transition"
+                    >
+                      <input
+                        type="radio"
+                        name="infrastructure"
+                        value="severely_damaged"
+                        class="mr-3 w-4 h-4"
+                      />
+                      <span>Severely Damaged (Major routes blocked)</span>
+                    </label>
+                    <label
+                      class="flex items-center p-3 bg-gray-700 rounded-lg cursor-pointer hover:bg-gray-600 transition"
+                    >
+                      <input
+                        type="radio"
+                        name="infrastructure"
+                        value="collapsed"
+                        class="mr-3 w-4 h-4"
+                      />
+                      <span>Collapsed (No ground access possible)</span>
+                    </label>
+                  </div>
+                </div>
+
+                <!-- Question 4: Estimated Population Affected -->
+                <div class="bg-gray-800 p-6 rounded-lg border border-gray-700">
+                  <label class="block text-lg font-semibold text-white mb-3"
+                    >4. Estimated Population Affected
+                    <span class="text-red-500">*</span></label
+                  >
+                  <div class="space-y-2">
+                    <label
+                      class="flex items-center p-3 bg-gray-700 rounded-lg cursor-pointer hover:bg-gray-600 transition"
+                    >
+                      <input
+                        type="radio"
+                        name="population"
+                        value="under_10k"
+                        class="mr-3 w-4 h-4"
+                        required
+                      />
+                      <span>Under 10,000 people</span>
+                    </label>
+                    <label
+                      class="flex items-center p-3 bg-gray-700 rounded-lg cursor-pointer hover:bg-gray-600 transition"
+                    >
+                      <input
+                        type="radio"
+                        name="population"
+                        value="10k_50k"
+                        class="mr-3 w-4 h-4"
+                      />
+                      <span>10,000 - 50,000 people</span>
+                    </label>
+                    <label
+                      class="flex items-center p-3 bg-gray-700 rounded-lg cursor-pointer hover:bg-gray-600 transition"
+                    >
+                      <input
+                        type="radio"
+                        name="population"
+                        value="50k_200k"
+                        class="mr-3 w-4 h-4"
+                      />
+                      <span>50,000 - 200,000 people</span>
+                    </label>
+                    <label
+                      class="flex items-center p-3 bg-gray-700 rounded-lg cursor-pointer hover:bg-gray-600 transition"
+                    >
+                      <input
+                        type="radio"
+                        name="population"
+                        value="over_200k"
+                        class="mr-3 w-4 h-4"
+                      />
+                      <span>Over 200,000 people</span>
+                    </label>
+                  </div>
+                </div>
+
+                <!-- Question 5: Immediate Needs -->
+                <div class="bg-gray-800 p-6 rounded-lg border border-gray-700">
+                  <label class="block text-lg font-semibold text-white mb-3"
+                    >5. Most Critical Immediate Need
+                    <span class="text-red-500">*</span></label
+                  >
+                  <div class="space-y-2">
+                    <label
+                      class="flex items-center p-3 bg-gray-700 rounded-lg cursor-pointer hover:bg-gray-600 transition"
+                    >
+                      <input
+                        type="radio"
+                        name="critical_need"
+                        value="medical"
+                        class="mr-3 w-4 h-4"
+                        required
+                      />
+                      <span>Medical Supplies & Personnel</span>
+                    </label>
+                    <label
+                      class="flex items-center p-3 bg-gray-700 rounded-lg cursor-pointer hover:bg-gray-600 transition"
+                    >
+                      <input
+                        type="radio"
+                        name="critical_need"
+                        value="water"
+                        class="mr-3 w-4 h-4"
+                      />
+                      <span>Clean Water</span>
+                    </label>
+                    <label
+                      class="flex items-center p-3 bg-gray-700 rounded-lg cursor-pointer hover:bg-gray-600 transition"
+                    >
+                      <input
+                        type="radio"
+                        name="critical_need"
+                        value="food"
+                        class="mr-3 w-4 h-4"
+                      />
+                      <span>Food & Nutrition</span>
+                    </label>
+                    <label
+                      class="flex items-center p-3 bg-gray-700 rounded-lg cursor-pointer hover:bg-gray-600 transition"
+                    >
+                      <input
+                        type="radio"
+                        name="critical_need"
+                        value="shelter"
+                        class="mr-3 w-4 h-4"
+                      />
+                      <span>Shelter & Temporary Housing</span>
+                    </label>
+                  </div>
+                </div>
+
+                <!-- Question 6: Time Sensitivity -->
+                <div class="bg-gray-800 p-6 rounded-lg border border-gray-700">
+                  <label class="block text-lg font-semibold text-white mb-3"
+                    >6. Time Sensitivity
+                    <span class="text-red-500">*</span></label
+                  >
+                  <div class="space-y-2">
+                    <label
+                      class="flex items-center p-3 bg-gray-700 rounded-lg cursor-pointer hover:bg-gray-600 transition"
+                    >
+                      <input
+                        type="radio"
+                        name="urgency"
+                        value="immediate"
+                        class="mr-3 w-4 h-4"
+                        required
+                      />
+                      <span>Immediate (Life-threatening, &lt;6 hours)</span>
+                    </label>
+                    <label
+                      class="flex items-center p-3 bg-gray-700 rounded-lg cursor-pointer hover:bg-gray-600 transition"
+                    >
+                      <input
+                        type="radio"
+                        name="urgency"
+                        value="urgent"
+                        class="mr-3 w-4 h-4"
+                      />
+                      <span>Urgent (Critical, &lt;24 hours)</span>
+                    </label>
+                    <label
+                      class="flex items-center p-3 bg-gray-700 rounded-lg cursor-pointer hover:bg-gray-600 transition"
+                    >
+                      <input
+                        type="radio"
+                        name="urgency"
+                        value="priority"
+                        class="mr-3 w-4 h-4"
+                      />
+                      <span>Priority (Important, 1-3 days)</span>
+                    </label>
+                    <label
+                      class="flex items-center p-3 bg-gray-700 rounded-lg cursor-pointer hover:bg-gray-600 transition"
+                    >
+                      <input
+                        type="radio"
+                        name="urgency"
+                        value="standard"
+                        class="mr-3 w-4 h-4"
+                      />
+                      <span>Standard (Week+ timeframe)</span>
+                    </label>
+                  </div>
+                </div>
+
+                <button
+                  type="submit"
+                  class="w-full flex items-center justify-center gap-2 p-4 bg-blue-600 text-white rounded-lg font-semibold text-lg hover:bg-blue-700 transition-colors shadow-lg"
+                >
+                  <i data-lucide="arrow-right"></i>
+                  Continue to Detailed Description
+                </button>
+              </form>
+            </section>
+
+            <!-- ===== 2. Entry Page (Detailed Description) ===== -->
+            <section id="entry-page" class="page-section hidden space-y-3">
+              <h2 class="text-2xl font-semibold text-white">
+                Detailed Crisis Description
+              </h2>
+              <div
+                class="bg-gray-800 p-4 rounded-lg border border-gray-700 mb-4"
+              >
+                <h3 class="text-lg font-semibold text-blue-400 mb-2">
+                  Form Summary:
+                </h3>
+                <div id="form-summary" class="text-gray-300 space-y-1"></div>
+              </div>
               <p class="text-lg text-gray-400">
-                Provide an initial report of the situation. Describe the
-                location, incident type (e.g., earthquake, flood), estimated
-                scale, and any known immediate needs. The system will analyze
-                your report and ask follow-up questions.
+                Now provide additional context and details about the situation.
+                The AI will use both your form responses and this description to
+                ask targeted follow-up questions.
               </p>
               <textarea
                 id="crisis-description"
                 rows="12"
                 class="w-full p-4 bg-gray-800 border border-gray-700 rounded-lg text-gray-200 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                placeholder="e.g., 'Large 7.2 magnitude earthquake hit 20km north of city X. Reports of widespread building collapse in the downtown and northern residential areas. Main highway bridge is down. Airport status unknown. Requesting immediate medical and shelter support...'"
+                placeholder="e.g., 'The earthquake occurred at 3:42 AM local time. Downtown area has widespread building collapse. Northern residential areas also heavily affected. Main highway bridge (Route 405) is completely down. Unable to confirm airport status - communications are limited. Multiple reports of trapped individuals in collapsed structures...'"
               ></textarea>
               <button
                 id="start-analysis-btn"
                 class="w-full flex items-center justify-center gap-2 p-4 bg-blue-600 text-white rounded-lg font-semibold text-lg hover:bg-blue-700 transition-colors shadow-lg"
               >
                 <i data-lucide="file-text"></i>
-                Start Data Collection
+                Start AI Analysis
               </button>
             </section>
 
-            <!-- ===== 2. Chat Page ===== -->
+            <!-- ===== 3. Chat Page ===== -->
             <section id="chat-page" class="page-section hidden">
               <div
                 class="flex flex-col h-[calc(100vh-12rem)] max-w-3xl mx-auto bg-gray-800 rounded-lg shadow-2xl"
               >
-                <!-- Chat Messages -->
                 <div
                   id="chat-messages"
                   class="flex-1 p-4 space-y-4 overflow-y-auto"
-                >
-                  <!-- Messages added by JS -->
-                </div>
-                <!-- Loader -->
+                ></div>
                 <div
                   id="chat-loader"
                   class="flex items-center justify-center p-4 gap-2 text-gray-400 hidden"
@@ -125,7 +482,6 @@
                   <div class="loader !w-5 !h-5"></div>
                   <span id="chat-loader-text">AI is thinking...</span>
                 </div>
-                <!-- Chat Input -->
                 <div
                   class="flex-shrink-0 p-4 border-t border-gray-700 flex gap-3"
                 >
@@ -145,7 +501,7 @@
               </div>
             </section>
 
-            <!-- ===== 3. Optimization Page ===== -->
+            <!-- ===== 4. Optimization Page ===== -->
             <section
               id="optimization-page"
               class="page-section hidden space-y-6"
@@ -155,13 +511,9 @@
               </h2>
               <p class="text-lg text-gray-400">
                 The system has gathered sufficient data. Select the primary
-                objective for the optimization engine. Your choice will define
-                the constraints for the logistics model (e.g., linear
-                programming, non-linear optimization) to generate the final
-                distribution plan.
+                objective for the optimization engine.
               </p>
               <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <!-- Strategy 1: Max Welfare -->
                 <button
                   id="btn-strategy-welfare"
                   class="p-6 bg-gray-800 rounded-lg border border-gray-700 text-left hover:border-blue-500 hover:bg-gray-700 transition-all"
@@ -174,10 +526,9 @@
                     Maximum Welfare
                   </h3>
                   <p class="text-gray-400">
-                    Prioritizes reaching the largest number of people. (Default)
+                    Prioritizes reaching the largest number of people.
                   </p>
                 </button>
-                <!-- Strategy 2: Highest Need -->
                 <button
                   id="btn-strategy-need"
                   class="p-6 bg-gray-800 rounded-lg border border-gray-700 text-left hover:border-green-500 hover:bg-gray-700 transition-all"
@@ -188,11 +539,9 @@
                   ></i>
                   <h3 class="text-xl font-semibold text-white">Most Need</h3>
                   <p class="text-gray-400">
-                    Prioritizes locations with the most critical needs (e.g.,
-                    medical supplies).
+                    Prioritizes locations with the most critical needs.
                   </p>
                 </button>
-                <!-- Strategy 3: Fastest Results -->
                 <button
                   id="btn-strategy-fastest"
                   class="p-6 bg-gray-800 rounded-lg border border-gray-700 text-left hover:border-yellow-500 hover:bg-gray-700 transition-all"
@@ -205,13 +554,13 @@
                     Fastest Results
                   </h3>
                   <p class="text-gray-400">
-                    Prioritizes the quickest delivery times to any location.
+                    Prioritizes the quickest delivery times.
                   </p>
                 </button>
               </div>
             </section>
 
-            <!-- ===== 4. Confirmation Page ===== -->
+            <!-- ===== 5. Confirmation Page ===== -->
             <section
               id="confirmation-page"
               class="page-section hidden space-y-6"
@@ -220,17 +569,13 @@
                 Confirm Parameters
               </h2>
               <p class="text-lg text-gray-400">
-                Please review all collected data and the selected strategy
-                before generating the final plan.
+                Review all collected data and the selected strategy before
+                generating the final plan.
               </p>
-
               <div
                 id="confirmation-summary"
                 class="p-4 bg-gray-800 rounded-lg border border-gray-700 max-h-96 overflow-y-auto"
-              >
-                <!-- Confirmation data added by JS -->
-              </div>
-
+              ></div>
               <div class="flex gap-4">
                 <button
                   id="confirm-and-generate-btn"
@@ -249,34 +594,26 @@
               </div>
             </section>
 
-            <!-- ===== 5. Plan Page ===== -->
+            <!-- ===== 6. Plan Page ===== -->
             <section id="plan-page" class="page-section hidden space-y-6">
               <h2 class="text-3xl font-semibold text-white">
                 Generated Distribution Plan
               </h2>
-
-              <!-- Plan Loader -->
               <div
                 id="plan-loader"
                 class="flex flex-col items-center justify-center h-96 text-gray-400"
               >
                 <div class="loader !w-16 !h-16"></div>
-                <p class="mt-4 text-lg">
-                  Running optimizations based on game theory and linear
-                  programming...
-                </p>
+                <p class="mt-4 text-lg">Running optimizations...</p>
               </div>
-
-              <!-- Plan Content -->
               <div id="plan-content" class="hidden space-y-6">
-                <!-- Actions -->
                 <div class="flex gap-4">
                   <button
                     id="save-plan-btn"
                     class="flex items-center justify-center gap-2 p-3 bg-green-600 text-white rounded-lg font-semibold hover:bg-green-700 transition-colors"
                   >
                     <i data-lucide="save"></i>
-                    Save Plan to Shared DB
+                    Save Plan
                   </button>
                   <button
                     id="start-over-btn"
@@ -286,20 +623,16 @@
                     Start New Plan
                   </button>
                 </div>
-
-                <!-- Summary -->
                 <div class="bg-gray-800 p-6 rounded-lg shadow-xl">
                   <h3
                     id="plan-title"
                     class="text-2xl font-semibold text-white mb-2"
                   >
-                    Plan: Maximum Welfare
+                    Plan
                   </h3>
                   <p id="plan-description" class="text-gray-400 mb-6">
-                    This plan prioritizes delivering the most resources to the
-                    largest population centers.
+                    Description
                   </p>
-
                   <div
                     class="grid grid-cols-2 md:grid-cols-4 gap-4 text-center"
                   >
@@ -308,25 +641,23 @@
                       <span
                         id="stat-strategy"
                         class="text-2xl font-bold text-blue-400"
-                        >welfare</span
+                        >-</span
                       >
                     </div>
                     <div>
-                      <span class="block text-sm text-gray-400"
-                        >Est. Completion Time</span
-                      >
-                      <span id="stat-time" class="text-2xl font-bold text-white"
-                        >95 min</span
+                      <span class="block text-sm text-gray-400">Distance</span>
+                      <span
+                        id="stat-distance"
+                        class="text-2xl font-bold text-white"
+                        >-</span
                       >
                     </div>
                     <div>
-                      <span class="block text-sm text-gray-400"
-                        >Total Resources</span
-                      >
+                      <span class="block text-sm text-gray-400">Resources</span>
                       <span
                         id="stat-resources"
                         class="text-2xl font-bold text-white"
-                        >3050 units</span
+                        >-</span
                       >
                     </div>
                     <div>
@@ -334,18 +665,14 @@
                       <span
                         id="stat-vehicles"
                         class="text-2xl font-bold text-white"
-                        >2 Trucks, 1 Drone</span
+                        >-</span
                       >
                     </div>
                   </div>
                 </div>
-
-                <!-- Map -->
                 <div class="h-96 w-full bg-gray-700 rounded-lg shadow-lg">
                   <div id="plan-map" class="h-full w-full rounded-lg"></div>
                 </div>
-
-                <!-- Resource Ledger -->
                 <div class="bg-gray-800 rounded-lg shadow-xl overflow-hidden">
                   <h3
                     class="text-xl font-semibold text-white p-4 border-b border-gray-700"
@@ -364,9 +691,10 @@
                         <th class="p-3">Total Units</th>
                       </tr>
                     </thead>
-                    <tbody id="ledger-body" class="divide-y divide-gray-700">
-                      <!-- Rows added by JS -->
-                    </tbody>
+                    <tbody
+                      id="ledger-body"
+                      class="divide-y divide-gray-700"
+                    ></tbody>
                   </table>
                 </div>
               </div>
@@ -375,13 +703,11 @@
         </div>
       </main>
 
-      <!-- Floating Notification Container -->
+      <!-- Notification Container -->
       <div
         id="notification-container"
         class="fixed top-4 right-4 z-50 w-80 space-y-3"
-      >
-        <!-- Notifications added by JS -->
-      </div>
+      ></div>
 
       <!-- Error Modal -->
       <div
@@ -397,15 +723,12 @@
             </h3>
             <button
               id="close-error-modal-btn-top"
-              class_A="text-gray-500 hover:text-white"
-              onclick="document.getElementById('error-modal').classList.add('hidden')"
+              class="text-gray-500 hover:text-white"
             >
               <i data-lucide="x"></i>
             </button>
           </div>
-          <p id="error-message" class="text-gray-300 mb-6">
-            Could not load saved plans. See console for details.
-          </p>
+          <p id="error-message" class="text-gray-300 mb-6">Error message</p>
           <button
             id="close-error-modal-btn"
             class="w-full p-3 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 transition-colors"

@@ -16,10 +16,8 @@ import {
   setLogLevel,
 } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-// --- Global Variables ---
-let db, auth;
-let userId;
-let appId;
+// Global state
+let formData = {};
 let chatHistory = [];
 let dynamicQuestions = [];
 let currentQuestionIndex = 0;
@@ -27,111 +25,22 @@ let collectedData = {};
 let generatedPlan = null;
 let mapInstance = null;
 
-// --- 1. AI API Key ---
-// ATTENTION: Paste your Google AI Studio API key here!
-// Get one for free at https://aistudio.google.com/app/apikey
-const apiKey = "AIzaSyBP9Fkxfo0pzHARRLj6bK_qzTj9v3672o4"; // <--- PUT AI KEY HERE
+const apiKey = "AIzaSyBP9Fkxfo0pzHARRLj6bK_qzTj9v3672o4";
 
-// --- 2. Firebase Config and Init ---
-// ATTENTION: Paste your own Firebase project configuration here!
-const firebaseConfig = {
-  apiKey: "AIzaSyBhliGUFEJ7QiVwTAUXAsL-Tv4GNFZPATQ",
-  authDomain: "alloc8-fc09f.firebaseapp.com",
-  projectId: "alloc8-fc09f",
-  storageBucket: "alloc8-fc09f.firebasestorage.app",
-  messagingSenderId: "938509665123",
-  appId: "1:938509665123:web:0d83ce05eb59e3cf604956",
-  measurementId: "G-051ELH05LR",
-};
-// If your config is empty, the app will not connect to Firestore.
-if (firebaseConfig.projectId === "YOUR_PROJECT_ID") {
-  console.warn(
-    "Firebase config is not set. Please paste your project config in alloc8.html. Firestore features will not work.",
-  );
-}
-// Check for AI Key
-if (apiKey === "YOUR_GEMINI_API_KEY") {
-  console.warn(
-    "Gemini API key is not set. Please paste your API key in alloc8.html. AI features will not work.",
-  );
-}
-
-appId = firebaseConfig.projectId || "alloc8-demo";
-
-// Initialize Firebase
-try {
-  const app = initializeApp(firebaseConfig);
-  db = getFirestore(app);
-  auth = getAuth(app);
-  setLogLevel("debug");
-
-  // Sign in
-  onAuthStateChanged(auth, async (user) => {
-    if (user) {
-      console.log("User is signed in:", user.uid);
-      userId = user.uid;
-      document.getElementById("user-id-display").textContent =
-        `User ID: ${userId}`;
-      listenForPlans(); // Start listening for saved plans
-    } else {
-      console.log("User is not signed in, attempting anonymous sign-in.");
-      try {
-        // Use __initial_auth_token if available (Canvas env)
-        if (
-          typeof __initial_auth_token !== "undefined" &&
-          __initial_auth_token
-        ) {
-          await signInWithCustomToken(auth, __initial_auth_token);
-        } else {
-          // Fallback for local dev
-          await signInAnonymously(auth);
-        }
-      } catch (error) {
-        console.error("Anonymous Sign-In Error:", error);
-        // Display error to user in a modal
-        showErrorModal(
-          "Firebase Auth Error",
-          `Could not sign in: ${error.message}. Firestore features will be disabled.`,
-        );
-      }
-    }
-  });
-} catch (e) {
-  console.error("Firebase Initialization Error:", e);
-  showErrorModal(
-    "Firebase Init Error",
-    "Could not initialize Firebase. Please check your `firebaseConfig` object in the HTML file. Saved plans will not work.",
-  );
-}
-
-// --- Core Functions ---
-
-/**
- * Shows the specified page and hides all others.
- * @param {string} pageId - The ID of the page section to show.
- */
+// Utility functions
 function showPage(pageId) {
-  document.querySelectorAll(".page-section").forEach((section) => {
-    section.classList.add("hidden");
-  });
+  document
+    .querySelectorAll(".page-section")
+    .forEach((s) => s.classList.add("hidden"));
   document.getElementById(pageId).classList.remove("hidden");
-
-  // Special handling for map initialization
   if (pageId === "plan-page" && mapInstance) {
-    // Leaflet maps need to be invalidated if their container was hidden
     setTimeout(() => mapInstance.invalidateSize(), 100);
   }
 }
 
-/**
- * Adds a message to the chat UI.
- * @param {string} sender - 'user', 'ai', or 'system'.
- * @param {string} text - The chat message text.
- */
 function addChatMessage(sender, text) {
   const chatMessages = document.getElementById("chat-messages");
   const messageEl = document.createElement("div");
-
   let bgColor, textColor, align, senderName;
 
   switch (sender) {
@@ -145,30 +54,24 @@ function addChatMessage(sender, text) {
       bgColor = "bg-gray-700";
       textColor = "text-gray-200";
       align = "flex justify-start";
-      senderName = "Situational Insight Engine";
+      senderName = "AI Assistant";
       break;
-    default: // system
-      bgColor = "bg-[#800000]";
+    default:
+      bgColor = "bg-gray-800";
       textColor = "text-yellow-400";
       align = "flex justify-center";
-      senderName = "Augmented Real-Time Data Stream (Including Satellite Sources)";
-      break;
+      senderName = "System";
   }
 
   const wrapperDiv = document.createElement("div");
   wrapperDiv.className = `w-full ${align}`;
   messageEl.className = `max-w-lg p-3 my-2 rounded-lg ${bgColor} ${textColor} shadow-md`;
   messageEl.innerHTML = `<strong class="block text-sm">${senderName}</strong><p>${text}</p>`;
-
   wrapperDiv.appendChild(messageEl);
-  chatMessages.appendChild(wrapperDiv);-scroll
+  chatMessages.appendChild(wrapperDiv);
+  chatMessages.scrollTop = chatMessages.scrollHeight;
 }
 
-/**
- * Shows a loading indicator in the chat.
- * @param {boolean} show - Whether to show or hide the loader.
- * @param {string} [text] - Optional text to display.
- */
 function showChatLoader(show, text = "AI is thinking...") {
   const loader = document.getElementById("chat-loader");
   const loaderText = document.getElementById("chat-loader-text");
@@ -180,56 +83,55 @@ function showChatLoader(show, text = "AI is thinking...") {
   }
 }
 
-// --- AI API Call Function ---
+function showErrorModal(title, message) {
+  document.getElementById("error-title").textContent = title;
+  document.getElementById("error-message").textContent = message;
+  document.getElementById("error-modal").classList.remove("hidden");
+}
 
-/**
- * Calls the Gemini AI API with exponential backoff.
- * @param {string} systemPrompt - The system-level instruction for the AI.
- * @param {string} userQuery - The user's prompt.
- * @param {boolean} [useGrounding=false] - Whether to use Google Search grounding.
- * @param {boolean} [jsonResponse=false] - Whether to request a JSON response.
- * @returns {Promise<object>} - An object containing `text` and `sources`.
- */
+function showNotification(title, message) {
+  const container = document.getElementById("notification-container");
+  const id = `notif-${Date.now()}`;
+  const el = document.createElement("div");
+  el.id = id;
+  el.className =
+    "bg-gray-800 border border-blue-500 text-white p-4 rounded-lg shadow-xl";
+  el.innerHTML = `
+    <div class="flex justify-between items-center mb-2">
+      <h4 class="font-bold text-blue-400">${title}</h4>
+      <button class="text-gray-500 hover:text-white" onclick="document.getElementById('${id}').remove()">&times;</button>
+    </div>
+    <p>${message}</p>
+  `;
+  container.appendChild(el);
+  setTimeout(() => el.remove(), 5000);
+}
+
+// AI API Call with retry
 async function callGeminiAPI(
   systemPrompt,
   userQuery,
   useGrounding = false,
   jsonResponse = false,
 ) {
-  if (apiKey === "YOUR_GEMINI_API_KEY") {
-    console.error("Gemini API key is not set.");
-    showErrorModal(
-      "AI Error",
-      "Gemini API key is not set. Please paste your API key in alloc8.html to enable AI features.",
-    );
-    throw new Error("Gemini API key is not set.");
-  }
-
   const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
-
   const apiPayload = {
     contents: [{ parts: [{ text: userQuery }] }],
   };
 
   if (systemPrompt) {
-    apiPayload.systemInstruction = {
-      parts: [{ text: systemPrompt }],
-    };
+    apiPayload.systemInstruction = { parts: [{ text: systemPrompt }] };
   }
-
   if (useGrounding) {
     apiPayload.tools = [{ google_search: {} }];
   }
-
   if (jsonResponse) {
-    apiPayload.generationConfig = {
-      responseMimeType: "application/json",
-    };
+    apiPayload.generationConfig = { responseMimeType: "application/json" };
   }
 
   let attempts = 0;
   const maxAttempts = 5;
-  const baseDelay = 1000; // 1 second
+  const baseDelay = 1000;
 
   while (attempts < maxAttempts) {
     try {
@@ -251,30 +153,20 @@ async function callGeminiAPI(
 
       if (candidate && candidate.content?.parts?.[0]?.text) {
         const text = candidate.content.parts[0].text;
-
-        // Extract sources if grounding was used
         let sources = [];
         const groundingMetadata = candidate.groundingMetadata;
         if (groundingMetadata && groundingMetadata.groundingAttributions) {
           sources = groundingMetadata.groundingAttributions
-            .map((attr) => ({
-              uri: attr.web?.uri,
-              title: attr.web?.title,
-            }))
+            .map((attr) => ({ uri: attr.web?.uri, title: attr.web?.title }))
             .filter((source) => source.uri && source.title);
         }
-
-        return { text: text, sources: sources };
+        return { text, sources };
       } else {
-        console.error("Invalid API response structure:", result);
         throw new Error("Invalid API response structure from Gemini.");
       }
     } catch (error) {
       attempts++;
-      if (attempts >= maxAttempts) {
-        console.error("AI API Error (Max attempts reached):", error);
-        throw error; // Re-throw after max attempts
-      }
+      if (attempts >= maxAttempts) throw error;
       const delay = baseDelay * Math.pow(2, attempts) + Math.random() * 1000;
       console.warn(
         `AI API error (attempt ${attempts}): ${error.message}. Retrying in ${Math.round(delay / 1000)}s...`,
@@ -282,52 +174,98 @@ async function callGeminiAPI(
       await new Promise((resolve) => setTimeout(resolve, delay));
     }
   }
-  // This part should not be reachable, but as a fallback:
   throw new Error("AI API request failed after all retry attempts.");
 }
 
-// --- Event Handlers ---
+// Form submission handler
+document.getElementById("crisis-form").addEventListener("submit", function (e) {
+  e.preventDefault();
 
-/**
- * Handles the initial analysis of the crisis description.
- */
-async function handleInitialAnalysis() {
-  const initialPrompt = document.getElementById("crisis-description").value;
-  if (!initialPrompt) {
-    showErrorModal("Input Required", "Please describe the crisis situation.");
-    return;
+  // Collect form data
+  formData = {
+    incident_type: document.querySelector('input[name="incident_type"]:checked')
+      .value,
+    scale: document.querySelector('input[name="scale"]:checked').value,
+    infrastructure: document.querySelector(
+      'input[name="infrastructure"]:checked',
+    ).value,
+    population: document.querySelector('input[name="population"]:checked')
+      .value,
+    critical_need: document.querySelector('input[name="critical_need"]:checked')
+      .value,
+    urgency: document.querySelector('input[name="urgency"]:checked').value,
+  };
+
+  // Display form summary
+  const summaryDiv = document.getElementById("form-summary");
+  const labels = {
+    incident_type: "Incident Type",
+    scale: "Scale",
+    infrastructure: "Infrastructure",
+    population: "Population Affected",
+    critical_need: "Critical Need",
+    urgency: "Urgency",
+  };
+
+  let summaryHTML = "";
+  for (const [key, value] of Object.entries(formData)) {
+    summaryHTML += `<p><strong>${labels[key]}:</strong> ${value.replace(/_/g, " ")}</p>`;
   }
-  if (apiKey === "YOUR_GEMINI_API_KEY") {
+  summaryDiv.innerHTML = summaryHTML;
+
+  showPage("entry-page");
+  lucide.createIcons();
+});
+
+// Initial analysis handler
+async function handleInitialAnalysis() {
+  const detailedDescription =
+    document.getElementById("crisis-description").value;
+  if (!detailedDescription) {
     showErrorModal(
-      "AI Key Missing",
-      "AI functions are disabled. Please add your Gemini API key to the alloc8.html file to enable AI analysis.",
+      "Input Required",
+      "Please provide a detailed crisis description.",
     );
     return;
   }
 
   showPage("chat-page");
-  addChatMessage("user", initialPrompt);
+  addChatMessage("user", detailedDescription);
   showChatLoader(true);
 
-  collectedData = { initialDescription: initialPrompt };
-  chatHistory.push({ role: "user", parts: [{ text: initialPrompt }] });
+  // Combine form data with description
+  const formContext = Object.entries(formData)
+    .map(([key, value]) => `${key}: ${value}`)
+    .join(", ");
+
+  collectedData = {
+    formData: formData,
+    initialDescription: detailedDescription,
+    formContext: formContext,
+  };
+
+  chatHistory.push({ role: "user", parts: [{ text: detailedDescription }] });
 
   try {
-    // --- Step 1: Augment data with Google Search ---
-    const systemPromptAugment = `You are a humanitarian aid logistics expert. A user has provided an initial crisis report. Use Google Search to find augmenting data (like exact location, population density, recent news, infrastructure status).
-         Respond with a concise, bulleted summary of this augmented data.
-         - Location: (City, Region, Country)
-         - Incident Type: (e.g., Earthquake, Flood)
-         - Population Affected (Estimate): (e.g., "City of 50k", "Region of 2M")
-         - Key Infrastructure (Status): (e.g., "Main airport (XXX) reportedly closed", "Highway 405 blocked")
-         - Urgent Needs (Inferred): (e.g., "Water, Shelter, Medical")
-         - Search Sources: (List 1-2 titles and URLs from your search)
+    // Step 1: Augment with Google Search
+    const systemPromptAugment = `You are a humanitarian aid logistics expert. A user has provided structured form data and a detailed crisis report.
 
-         Do not ask questions.`;
+Form Data: ${formContext}
+Description: ${detailedDescription}
+
+Use Google Search to find augmenting real-time data. Respond with a concise, bulleted summary:
+- Exact Location: (City, Region, Country with coordinates if available)
+- Current Situation: (Latest news and updates)
+- Population Data: (Specific numbers from reliable sources)
+- Infrastructure Status: (Airports, roads, hospitals - specific details)
+- Resource Availability: (Local warehouses, distribution centers)
+- Search Sources: (List 2-3 titles and URLs)
+
+Do not ask questions.`;
 
     const augmentData = await callGeminiAPI(
       systemPromptAugment,
-      initialPrompt,
+      detailedDescription,
       true,
     );
 
@@ -344,36 +282,40 @@ async function handleInitialAnalysis() {
     }
 
     const processedAugmentData = augmentData.text
-      .replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>") // Replace markdown bold **text**
-      .replace(/\n/g, "<br>"); // Replace newlines
+      .replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>")
+      .replace(/\n/g, "<br>");
+
     addChatMessage(
-      "Augmented Real-Time Data Stream (Including Satellite Sources)",
+      "system",
       `<strong>Augmented Data (Live Search):</strong><br>${processedAugmentData}${sourcesText}`,
     );
     chatHistory.push({ role: "model", parts: [{ text: augmentData.text }] });
     collectedData.augmentedData = augmentData.text;
     collectedData.sources = augmentData.sources;
 
-    // --- Step 2: Generate dynamic questions ---
-    const combinedContext = `Initial Report: "${initialPrompt}"\n\nAugmented Analysis:\n${augmentData.text}`;
+    // Step 2: Generate targeted questions based on form + description
+    const combinedContext = `Form Data: ${formContext}\n\nDetailed Report: "${detailedDescription}"\n\nAugmented Analysis:\n${augmentData.text}`;
 
-    const systemPromptQuestions = `You are an AI assistant gathering critical data for a resource distribution plan. Based on this context, you MUST generate 5 critical follow-up questions.
-         The questions must be programmatic and cover:
-         1.  <strong>Specific Locations:</strong> (e.g., "What are the exact neighborhoods or GPS coordinates of the affected zones?")
-         2.  <strong>Resource Needs (Specifics):</strong> (e.g., "What are the specific resource needs? Please list items and quantities, like 'water: 5000L, food: 10000 units, medical kits: 500'.")
-         3.  <strong>Transport Logistics:</strong> (e.g., "What is the on-ground condition of the main airport (code XXX) and highway Y?")
-         4.  <strong>Affected Population (Specifics):</strong> (e.g., "What are the estimated numbers at specific rally points or shelters?")
-         5.  <strong>Local Assets:</strong>(e.g., "Are there any local warehouses, distribution partners, or supply depots still intact?")
+    const systemPromptQuestions = `You are an AI assistant gathering critical data for a resource distribution plan. Based on the structured form data AND detailed context, generate 5 highly targeted follow-up questions that fill specific gaps.
 
-         Respond with ONLY a valid JSON array of strings. Do not include "'''json" or any other text.
-         Example:
-         [
-             "Question 1?",
-             "Question 2?",
-             "Question 3?",
-             "Question 4?",
-             "Question 5?"
-         ]`;
+Context:
+${combinedContext}
+
+Generate questions that are SPECIFIC to this situation. Focus on:
+1. Exact GPS coordinates or specific neighborhood names
+2. Precise resource quantities needed at specific locations
+3. Detailed transport/logistics constraints
+4. Specific population numbers at gathering points
+5. Available local assets and their current status
+
+Respond with ONLY a valid JSON array of strings:
+[
+"Question 1?",
+"Question 2?",
+"Question 3?",
+"Question 4?",
+"Question 5?"
+]`;
 
     const questionData = await callGeminiAPI(
       systemPromptQuestions,
@@ -381,33 +323,23 @@ async function handleInitialAnalysis() {
       false,
       true,
     );
-
-    // The API response is now guaranteed to be JSON text
     let cleanedJsonText = questionData.text.trim();
 
-    // Parse the JSON array of questions
     try {
       dynamicQuestions = JSON.parse(cleanedJsonText);
     } catch (e) {
-      console.error(
-        "Failed to parse questions JSON:",
-        e,
-        "Raw text:",
-        cleanedJsonText,
-      );
-      // Fallback if JSON is somehow still malformed
+      console.error("Failed to parse questions JSON:", e);
       dynamicQuestions = [
-        "What are the exact neighborhoods or GPS coordinates of the affected zones?",
-        "What are the specific resource needs (e.g., 'water: 5000L', 'food: 10000 units')?",
-        "What is the on-ground condition of main roads and airports?",
-        "What are the estimated numbers at specific rally points or shelters?",
-        "Are there any local warehouses or supply depots still intact?",
+        "What are the exact GPS coordinates or specific neighborhood names of the most affected areas?",
+        "What are the precise resource quantities needed? (e.g., 'Location A: water 5000L, food 10000 units')",
+        "What is the current status of specific roads, airports, and transport routes?",
+        "What are the exact population numbers at specific shelters or gathering points?",
+        "Are there operational warehouses or distribution centers available? Please provide addresses.",
       ];
     }
 
     currentQuestionIndex = 0;
 
-    // Ask the first question
     if (dynamicQuestions.length > 0) {
       addChatMessage("ai", dynamicQuestions[currentQuestionIndex]);
       chatHistory.push({
@@ -416,46 +348,37 @@ async function handleInitialAnalysis() {
       });
     }
   } catch (error) {
-    console.error("Question Generation API Error:", error);
-    addChatMessage(
-      "system",
-      `There was an error processing the initial analysis: ${error.message}. Please try again.`,
-    );
+    console.error("Question Generation Error:", error);
+    addChatMessage("system", `Error: ${error.message}`);
     showErrorModal(
       "AI Error",
       `Failed to generate follow-up questions: ${error.message}`,
     );
-    showPage("entry-page"); // Go back to entry
+    showPage("entry-page");
   } finally {
     showChatLoader(false);
   }
 }
 
-/**
- * Handles the user's reply to an AI-generated question.
- */
+// User message handler
 async function handleUserMessage() {
   const userInput = document.getElementById("chat-input");
   const message = userInput.value.trim();
-
   if (!message) return;
 
   addChatMessage("user", message);
   userInput.value = "";
 
-  // --- Acknowledgment Flow ---
   const ackWords = [
-    "Okay, got it.",
     "Understood.",
-    "Alright, processing...",
+    "Got it.",
+    "Processing...",
     "Received.",
     "Thank you.",
   ];
   const randomAck = ackWords[Math.floor(Math.random() * ackWords.length)];
   showChatLoader(true, randomAck);
-  // ---------------------------
 
-  // Store the answer
   const currentQuestion = dynamicQuestions[currentQuestionIndex];
   collectedData[`question_${currentQuestionIndex}`] = {
     question: currentQuestion,
@@ -464,140 +387,120 @@ async function handleUserMessage() {
   chatHistory.push({ role: "user", parts: [{ text: message }] });
 
   currentQuestionIndex++;
-
-  // Wait for a moment to simulate thought
   await new Promise((resolve) => setTimeout(resolve, 1500));
 
   if (currentQuestionIndex < dynamicQuestions.length) {
-    // Ask the next question
     const nextQuestion = dynamicQuestions[currentQuestionIndex];
     showChatLoader(false);
     addChatMessage("ai", nextQuestion);
     chatHistory.push({ role: "model", parts: [{ text: nextQuestion }] });
   } else {
-    // All questions answered, move to optimization
-    addChatMessage(
-      "system",
-      "All critical data collected. Summarizing and moving to optimization phase...",
-    );
+    addChatMessage("system", "All data collected. Summarizing...");
 
-    // Summarize data for optimization
     try {
       const fullConversation = JSON.stringify(collectedData, null, 2);
-      const systemPromptAnswer = `You are a logistics summarizer. A user has answered a series of questions about a crisis. Based on the following data, summarize the key logistical parameters.
-             - **Locations:** (List all specific coordinates, cities, or zones mentioned)
-             - **Population:** (Best total estimate)
-             - **Transport:** (List status of all airports, roads, ports)
-             - **Depots:** (List any available local warehouses)
-             - **Needs (Raw):** (List all resources requested)
+      const systemPromptSummary = `You are a logistics summarizer. Analyze the collected data and provide a structured summary:
 
-             Data:
-             ${fullConversation}
+Data:
+${fullConversation}
 
-             Respond with a concise bulleted summary. Do not ask questions.`;
+Provide:
+- **Locations:** (All specific coordinates, cities, zones)
+- **Population:** (Total estimate with breakdown)
+- **Transport:** (Status of all infrastructure)
+- **Depots:** (Available warehouses/distribution centers)
+- **Needs (Detailed):** (All resources with quantities)
 
-      const fullQuery = `Summarize this data: ${fullConversation}`;
-      const answerData = await callGeminiAPI(systemPromptAnswer, fullQuery);
+Respond concisely with bullets.`;
 
+      const summaryData = await callGeminiAPI(
+        systemPromptSummary,
+        fullConversation,
+      );
       addChatMessage(
         "ai",
-        `<strong>Data Summary:</strong><br>${answerData.text.replace(/\n/g, "<br>")}`,
+        `<strong>Data Summary:</strong><br>${summaryData.text.replace(/\n/g, "<br>")}`,
       );
-      chatHistory.push({ role: "model", parts: [{ text: answerData.text }] });
-      collectedData.finalSummary = answerData.text;
+      chatHistory.push({ role: "model", parts: [{ text: summaryData.text }] });
+      collectedData.finalSummary = summaryData.text;
 
-      // --- New Step: Parse needs for the ledger ---
-      const systemPromptParseNeeds = `Analyze the "Needs (Raw)" section of this summary and extract a structured list of locations and their requested resources.
-             Summary:
-             ${answerData.text}
+      // Parse needs for backend
+      const systemPromptParse = `Extract structured location and resource data from this summary:
 
-             Respond with ONLY a JSON object in this format:
-             {
-                 "locations": [
-                     { "name": "Location Name 1", "needs": { "water": 100, "food": 200, "medical": 50 } },
-                     { "name": "Location Name 2", "needs": { "water": 300, "food": 500 } }
-                 ]
-             }
-             If you cannot find specific locations or numbers, provide a best-guess reasonable structure.
-             `;
+${summaryData.text}
+
+Respond with ONLY valid JSON:
+{
+"locations": [
+{ "name": "Location 1", "lat": 0.0, "lon": 0.0, "needs": { "water": 100, "food": 200, "medical": 50 } }
+]
+}`;
+
       const needsData = await callGeminiAPI(
-        systemPromptParseNeeds,
-        fullConversation,
+        systemPromptParse,
+        summaryData.text,
         false,
         true,
       );
       try {
         collectedData.parsedNeeds = JSON.parse(needsData.text);
-        console.log("Parsed needs:", collectedData.parsedNeeds);
       } catch (e) {
-        console.error("Failed to parse needs JSON:", e, needsData.text);
-        collectedData.parsedNeeds = null; // Fallback
+        console.error("Failed to parse needs:", e);
+        collectedData.parsedNeeds = null;
       }
-      // ------------------------------------------
 
-      // Show the optimization page
       showPage("optimization-page");
     } catch (error) {
-      console.error("Data Summarization Error:", error);
-      addChatMessage("system", `Error summarizing data: ${error.message}`);
-      showErrorModal(
-        "AI Error",
-        `Failed to summarize collected data: ${error.message}`,
-      );
+      console.error("Summarization Error:", error);
+      addChatMessage("system", `Error: ${error.message}`);
+      showErrorModal("AI Error", `Failed to summarize: ${error.message}`);
     } finally {
       showChatLoader(false);
     }
   }
 }
 
-/**
- * Shows the confirmation page with all collected data.
- * @param {string} strategy - The selected optimization strategy.
- */
+// Strategy selection
 function showConfirmationPage(strategy) {
-  console.log(`Confirming strategy: ${strategy}`);
   collectedData.strategy = strategy;
-
   const summaryEl = document.getElementById("confirmation-summary");
-  let qAndAHtml = "<ul>";
+
+  let formSummary =
+    '<div class="mb-4"><h3 class="text-lg font-semibold text-gray-400">Form Data</h3><ul class="list-disc list-inside">';
+  for (const [key, value] of Object.entries(formData)) {
+    formSummary += `<li>${key.replace(/_/g, " ")}: ${value.replace(/_/g, " ")}</li>`;
+  }
+  formSummary += "</ul></div>";
+
+  let qAndA =
+    '<div><h3 class="text-lg font-semibold text-gray-400">Q&A</h3><ul>';
   for (let i = 0; i < dynamicQuestions.length; i++) {
     const item = collectedData[`question_${i}`];
     if (item) {
-      qAndAHtml += `<li class="mb-2"><strong>Q:</strong> ${item.question}<br><strong>A:</strong> ${item.answer}</li>`;
+      qAndA += `<li class="mb-2"><strong>Q:</strong> ${item.question}<br><strong>A:</strong> ${item.answer}</li>`;
     }
   }
-  qAndAHtml += "</ul>";
+  qAndA += "</ul></div>";
 
   summaryEl.innerHTML = `
-         <div class="space-y-4">
-             <div>
-                 <h3 class="text-lg font-semibold text-gray-400">Selected Strategy</h3>
-                 <p class="p-3 bg-gray-900 rounded-md text-xl font-bold text-blue-300 capitalize">${strategy}</p>
-             </div>
-             <div>
-                 <h3 class="text-lg font-semibold text-gray-400">Initial Description</h3>
-                 <p class="p-3 bg-gray-900 rounded-md">${collectedData.initialDescription}</p>
-             </div>
-             <div>
-                 <h3 class="text-lg font-semibold text-gray-400">Augmented Data</h3>
-                 <p class="p-3 bg-gray-900 rounded-md">${collectedData.augmentedData.replace(/\n/g, "<br>")}</p>
-             </div>
-             <div>
-                 <h3 class="text-lg font-semibold text-gray-400">Data Collection Q&A</h3>
-                 <div class="p-3 bg-gray-900 rounded-md">${qAndAHtml}</div>
-             </div>
-         </div>
-     `;
-
+    <div class="space-y-4">
+      <div>
+        <h3 class="text-lg font-semibold text-gray-400">Selected Strategy</h3>
+        <p class="p-3 bg-gray-900 rounded-md text-xl font-bold text-blue-300 capitalize">${strategy}</p>
+      </div>
+      ${formSummary}
+      <div>
+        <h3 class="text-lg font-semibold text-gray-400">Description</h3>
+        <p class="p-3 bg-gray-900 rounded-md">${collectedData.initialDescription}</p>
+      </div>
+      ${qAndA}
+    </div>
+  `;
   showPage("confirmation-page");
 }
 
-/**
- * Simulates a plan based on the chosen strategy.
- */
+// Generate plan
 async function generateFinalPlan() {
-  const strategy = collectedData.strategy;
-  console.log(`Generating final plan for strategy: ${strategy}`);
   showPage("plan-page");
   document.getElementById("plan-loader").classList.remove("hidden");
   document.getElementById("plan-content").classList.add("hidden");
@@ -607,16 +510,14 @@ async function generateFinalPlan() {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        strategy: strategy,
+        strategy: collectedData.strategy,
         parsedNeeds: collectedData.parsedNeeds,
+        formData: formData,
       }),
     });
 
     if (!response.ok) throw new Error(`Backend error ${response.status}`);
-
     const planData = await response.json();
-
-    // Save and render plan
     generatedPlan = planData;
     renderPlan(planData);
 
@@ -626,82 +527,65 @@ async function generateFinalPlan() {
     console.error("Optimization error:", err);
     showErrorModal(
       "Optimization Error",
-      `Failed to generate optimized plan: ${err.message}`,
+      `Failed to generate plan: ${err.message}`,
     );
     showPage("confirmation-page");
   }
 }
 
-
-/**
- * Renders the generated plan data in the UI.
- * @param {object} plan - The simulated plan object.
- */
+// Render plan
 function renderPlan(plan) {
-  // --- 1. Render Summary ---
   document.getElementById("plan-title").textContent = plan.summary.title;
   document.getElementById("plan-description").textContent =
     plan.summary.description;
   document.getElementById("stat-strategy").textContent = plan.strategy;
-  document.getElementById("stat-time").textContent =
-    `${plan.summary.totalTime} min`;
+  document.getElementById("stat-distance").textContent =
+    `${Math.round(plan.summary.totalDistanceMeters / 1000)} km`;
   document.getElementById("stat-resources").textContent =
     `${plan.summary.totalResources} units`;
   document.getElementById("stat-vehicles").textContent =
-    `${plan.summary.totalTrucks} Trucks, ${plan.summary.totalDrones} Drones`;
+    `${plan.summary.totalTrucks} Trucks`;
 
-  // --- 2. Render Resource Ledger ---
+  // Ledger
   const ledgerBody = document.getElementById("ledger-body");
-  ledgerBody.innerHTML = ""; // Clear old data
+  ledgerBody.innerHTML = "";
   plan.locations.forEach((loc) => {
     const total =
       (loc.needs.water || 0) + (loc.needs.food || 0) + (loc.needs.medical || 0);
-    const row = `
-             <tr class="border-b border-gray-700 hover:bg-gray-700">
-                 <td class="p-3">${loc.name}</td>
-                 <td class="p-3">${loc.needs.water || 0}</td>
-                 <td class="p-3">${loc.needs.food || 0}</td>
-                 <td class="p-3">${loc.needs.medical || 0}</td>
-                 <td class="p-3 font-bold">${total}</td>
-             </tr>
-         `;
-    ledgerBody.innerHTML += row;
+    ledgerBody.innerHTML += `
+      <tr class="hover:bg-gray-700">
+        <td class="p-3">${loc.name}</td>
+        <td class="p-3">${loc.needs.water || 0}</td>
+        <td class="p-3">${loc.needs.food || 0}</td>
+        <td class="p-3">${loc.needs.medical || 0}</td>
+        <td class="p-3 font-bold">${total}</td>
+      </tr>
+    `;
   });
 
-  // --- 3. Render Map ---
-  if (mapInstance) {
-    mapInstance.remove();
-  }
+  // Map
+  if (mapInstance) mapInstance.remove();
   mapInstance = L.map("plan-map").setView([plan.depot.lat, plan.depot.lon], 11);
   L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", {
-    attribution:
-      '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+    attribution: "© OpenStreetMap © CARTO",
   }).addTo(mapInstance);
 
-  // Add depot marker
   const depotIcon = L.divIcon({
-    html: `<i data-lucide="warehouse" class="text-blue-400" style="width: 32px; height: 32px; transform: translate(-16px, -16px);"></i>`,
+    html: '<div style="background: #3b82f6; width: 16px; height: 16px; border-radius: 50%; border: 2px solid white;"></div>',
     className: "",
+    iconSize: [16, 16],
   });
   L.marker([plan.depot.lat, plan.depot.lon], { icon: depotIcon })
     .addTo(mapInstance)
     .bindPopup(`<b>${plan.depot.name}</b>`);
 
-  // Add location markers
   const bounds = [[plan.depot.lat, plan.depot.lon]];
-  const allLocations = {
-    [plan.depot.name]: { lat: plan.depot.lat, lon: plan.depot.lon },
-  };
-
   plan.locations.forEach((loc) => {
-    if (!loc.lat || !loc.lon) {
-      console.warn("Skipping location with missing lat/lon:", loc.name);
-      return;
-    }
-    allLocations[loc.name] = { lat: loc.lat, lon: loc.lon };
+    if (!loc.lat || !loc.lon) return;
     const locIcon = L.divIcon({
-      html: `<i data-lucide="map-pin" class="text-red-500" style="width: 24px; height: 24px; transform: translate(-12px, -24px);"></i>`,
+      html: '<div style="background: #ef4444; width: 12px; height: 12px; border-radius: 50%; border: 2px solid white;"></div>',
       className: "",
+      iconSize: [12, 12],
     });
     L.marker([loc.lat, loc.lon], { icon: locIcon })
       .addTo(mapInstance)
@@ -711,267 +595,64 @@ function renderPlan(plan) {
     bounds.push([loc.lat, loc.lon]);
   });
 
-  // Add polylines for routes
-  plan.routes.forEach((route) => {
-    const fromLoc = allLocations[route.from];
-    const toLoc = allLocations[route.to];
-
-    if (!fromLoc || !toLoc) {
-      console.warn("Could not find locations for route:", route);
-      return;
-    }
-
-    const style =
-      route.type === "truck"
-        ? { color: "#fb923c", weight: 3, opacity: 0.8 } // orange
-        : { color: "#60a5fa", weight: 2, opacity: 1, dashArray: "5, 5" }; // blue dashed
-
-    L.polyline(
-      [
-        [fromLoc.lat, fromLoc.lon],
-        [toLoc.lat, toLoc.lon],
-      ],
-      style,
-    )
-      .addTo(mapInstance)
-      .bindPopup(
-        `${route.type.toUpperCase()} Route<br>${route.from} -> ${route.to}<br>${route.dist} km, ${route.time} min`,
-      );
-  });
-
   if (bounds.length > 1) {
     mapInstance.fitBounds(bounds, { padding: [50, 50] });
   }
 
-  // Re-render icons
   lucide.createIcons();
 }
 
-// --- Firestore Functions ---
-
-/**
- * Saves the currently generated plan to Firestore.
- */
-async function savePlan() {
-  // --- NEW: Check for valid config before saving ---
-  if (firebaseConfig.projectId === "YOUR_PROJECT_ID") {
-    showErrorModal(
-      "Firebase Not Configured",
-      "Cannot save plan. Please paste your `firebaseConfig` details into the alloc8.html file to enable saving.",
-    );
-    return;
-  }
-  if (!generatedPlan) {
-    showErrorModal("No Plan", "There is no plan generated to save.");
-    return;
-  }
-  if (!db || !userId || !appId) {
-    showErrorModal(
-      "Save Error",
-      "Cannot save plan. Database not connected. Check console for Firebase errors.",
-    );
-    return;
-  }
-  // ------------------------------------------------
-
-  const saveButton = document.getElementById("save-plan-btn");
-  saveButton.disabled = true;
-  saveButton.textContent = "Saving...";
-
-  try {
-    // Use a 'public' collection to share plans among users
-    const collectionPath = `artifacts/${appId}/public/data/plans`;
-
-    // Add a new document with a generated id
-    const docRef = await addDoc(collection(db, collectionPath), {
-      userId: userId,
-      planData: JSON.stringify(generatedPlan), // Store complex object as string
-      collectedData: JSON.stringify(collectedData), // Store inputs as string
-      strategy: generatedPlan.strategy,
-      title: generatedPlan.summary.title,
-      createdAt: serverTimestamp(),
-    });
-
-    console.log("Plan saved with ID: ", docRef.id);
-    showNotification(
-      "Plan Saved",
-      "The distribution plan has been saved and is accessible to other users.",
-    );
-  } catch (error) {
-    console.error("Error saving plan: ", error);
-    showErrorModal("Save Error", `Failed to save plan: ${error.message}`);
-  } finally {
-    saveButton.disabled = false;
-    saveButton.textContent = "Save Plan to Shared DB";
-  }
-}
-
-/**
- * Listens for real-time updates to saved plans.
- */
-function listenForPlans() {
-  if (!db || !appId || firebaseConfig.projectId === "YOUR_PROJECT_ID") {
-    console.warn("Firestore not ready, skipping plan listener.");
-    document.getElementById("saved-plans-list").innerHTML =
-      '<p class="text-gray-500">Connect Firebase to see saved plans.</p>';
-    return;
-  }
-
-  const collectionPath = `artifacts/${appId}/public/data/plans`;
-  const q = collection(db, collectionPath);
-
-  // onSnapshot attaches a real-time listener
-  onSnapshot(
-    q,
-    (querySnapshot) => {
-      const savedPlansList = document.getElementById("saved-plans-list");
-      savedPlansList.innerHTML = ""; // Clear list
-      if (querySnapshot.empty) {
-        savedPlansList.innerHTML =
-          '<p class="text-gray-500">No saved plans found.</p>';
-        return;
-      }
-
-      querySnapshot.forEach((doc) => {
-        const plan = doc.data();
-        const el = document.createElement("div");
-        el.className =
-          "p-3 bg-gray-700 rounded-lg shadow cursor-pointer hover:bg-gray-600";
-        el.innerHTML = `
-                 <h4 class="font-semibold text-blue-300">${plan.title || "Untitled Plan"}</h4>
-                 <p class="text-sm text-gray-400">Strategy: ${plan.strategy}</p>
-                 <p class="text-xs text-gray-500">Saved by: ${plan.userId.substring(0, 10)}...</p>
-             `;
-        // Add click event to load the plan
-        el.onclick = () => {
-          try {
-            const planData = JSON.parse(plan.planData);
-            const collData = JSON.parse(plan.collectedData);
-
-            // Load data and render the plan
-            generatedPlan = planData;
-            collectedData = collData;
-            renderPlan(planData);
-            showPage("plan-page");
-            showNotification(
-              "Plan Loaded",
-              `Loaded plan: ${planData.summary.title}`,
-            );
-          } catch (e) {
-            console.error("Error parsing saved plan:", e);
-            showErrorModal(
-              "Load Error",
-              "Could not parse the saved plan. The data might be corrupted.",
-            );
-          }
-        };
-        savedPlansList.appendChild(el);
-      });
-    },
-    (error) => {
-      console.error("Error listening to plans:", error);
-      showErrorModal(
-        "Load Error",
-        "Could not load saved plans. See console for details.",
-      );
-    },
-  );
-}
-
-// --- UI Utility Functions ---
-
-/**
- * Shows a floating notification toast.
- * @param {string} title - The title of the notification.
- * @param {string} message - The body text of the notification.
- */
-function showNotification(title, message) {
-  const container = document.getElementById("notification-container");
-  const id = `notif-${Date.now()}`;
-  const el = document.createElement("div");
-  el.id = id;
-  el.className =
-    "bg-gray-800 border border-blue-500 text-white p-4 rounded-lg shadow-xl animate-pulse"; // Simple pulse
-  el.innerHTML = `
-         <div class="flex justify-between items-center mb-2">
-             <h4 class="font-bold text-blue-400">${title}</h4>
-             <button class="text-gray-500 hover:text-white" onclick="document.getElementById('${id}').remove()">&times;</button>
-         </div>
-         <p>${message}</p>
-     `;
-  container.appendChild(el);
-
-  // Auto-remove after 5 seconds
-  setTimeout(() => {
-    el.remove();
-  }, 5000);
-}
-
-/**
- * Shows a modal error dialog.
- * @param {string} title - The title of the error.
- * @param {string} message - The body text of the error.
- */
-function showErrorModal(title, message) {
-  document.getElementById("error-title").textContent = title;
-  document.getElementById("error-message").textContent = message;
-  document.getElementById("error-modal").classList.remove("hidden");
-}
-
-// --- Window Load and Event Listeners ---
-window.onload = () => {
-  // Page navigation
-  document.getElementById("start-analysis-btn").onclick = handleInitialAnalysis;
-  document.getElementById("send-chat-btn").onclick = handleUserMessage;
-  document.getElementById("chat-input").onkeydown = (e) => {
-    if (e.key === "Enter") handleUserMessage();
-  };
-
-  // Strategy buttons
-  document.getElementById("btn-strategy-welfare").onclick = () =>
-    showConfirmationPage("welfare");
-  document.getElementById("btn-strategy-need").onclick = () =>
-    showConfirmationPage("need");
-  document.getElementById("btn-strategy-fastest").onclick = () =>
-    showConfirmationPage("fastest");
-
-  // Confirmation page buttons
-  document.getElementById("confirm-and-generate-btn").onclick =
-    generateFinalPlan;
-  document.getElementById("back-to-strategy-btn").onclick = () =>
-    showPage("optimization-page");
-
-  // Plan page buttons
-  document.getElementById("save-plan-btn").onclick = savePlan;
-  document.getElementById("start-over-btn").onclick = () => {
-    // Reset all state
-    chatHistory = [];
-    dynamicQuestions = [];
-    currentQuestionIndex = 0;
-    collectedData = {};
-    generatedPlan = null;
-    document.getElementById("chat-messages").innerHTML = "";
-    document.getElementById("crisis-description").value = "";
-    if (mapInstance) {
-      mapInstance.remove();
-      mapInstance = null;
-    }
-    showPage("entry-page");
-  };
-
-  // Error modal close
-  document.getElementById("close-error-modal-btn").onclick = () => {
-    document.getElementById("error-modal").classList.add("hidden");
-  };
-
-  // Sidebar toggle
-  const sidebar = document.getElementById("sidebar");
-  document.getElementById("toggle-sidebar-btn").onclick = () => {
-    sidebar.classList.toggle("-translate-x-full");
-  };
-
-  // Initial setup
-  showPage("entry-page");
-  lucide.createIcons();
-  console.log("Alloc8 App Initialized.");
+// Event listeners
+document.getElementById("start-analysis-btn").onclick = handleInitialAnalysis;
+document.getElementById("send-chat-btn").onclick = handleUserMessage;
+document.getElementById("chat-input").onkeydown = (e) => {
+  if (e.key === "Enter") handleUserMessage();
 };
+
+document.getElementById("btn-strategy-welfare").onclick = () =>
+  showConfirmationPage("welfare");
+document.getElementById("btn-strategy-need").onclick = () =>
+  showConfirmationPage("need");
+document.getElementById("btn-strategy-fastest").onclick = () =>
+  showConfirmationPage("fastest");
+
+document.getElementById("confirm-and-generate-btn").onclick = generateFinalPlan;
+document.getElementById("back-to-strategy-btn").onclick = () =>
+  showPage("optimization-page");
+
+document.getElementById("save-plan-btn").onclick = () => {
+  showNotification("Plan Saved", "Distribution plan saved successfully.");
+};
+
+document.getElementById("start-over-btn").onclick = () => {
+  formData = {};
+  chatHistory = [];
+  dynamicQuestions = [];
+  currentQuestionIndex = 0;
+  collectedData = {};
+  generatedPlan = null;
+  document.getElementById("chat-messages").innerHTML = "";
+  document.getElementById("crisis-description").value = "";
+  document.getElementById("crisis-form").reset();
+  if (mapInstance) {
+    mapInstance.remove();
+    mapInstance = null;
+  }
+  showPage("form-page");
+};
+
+document.getElementById("close-error-modal-btn").onclick = () => {
+  document.getElementById("error-modal").classList.add("hidden");
+};
+document.getElementById("close-error-modal-btn-top").onclick = () => {
+  document.getElementById("error-modal").classList.add("hidden");
+};
+
+document.getElementById("toggle-sidebar-btn").onclick = () => {
+  document.getElementById("sidebar").classList.toggle("-translate-x-full");
+};
+
+// Initialize
+showPage("form-page");
+lucide.createIcons();
+console.log("Alloc8 Form-Based System Initialized");
