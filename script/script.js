@@ -595,153 +595,43 @@ function showConfirmationPage(strategy) {
 /**
  * Simulates a plan based on the chosen strategy.
  */
-function generateFinalPlan() {
+async function generateFinalPlan() {
   const strategy = collectedData.strategy;
   console.log(`Generating final plan for strategy: ${strategy}`);
   showPage("plan-page");
   document.getElementById("plan-loader").classList.remove("hidden");
   document.getElementById("plan-content").classList.add("hidden");
 
-  // --- This is a simulation ---
-  // In a real app, this would be a complex backend call to an
-  // optimization engine (linear programming, ML, etc.)
-  // We simulate the data that engine would return.
+  try {
+    const response = await fetch("http://127.0.0.1:5000/generate-plan", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        strategy: strategy,
+        parsedNeeds: collectedData.parsedNeeds,
+      }),
+    });
 
-  // Simulate network delay
-  setTimeout(() => {
-    let simLocations = [
-      {
-        name: "Central Shelter",
-        lat: 34.0522,
-        lon: -118.2437,
-        needs: { water: 500, food: 1000, medical: 200 },
-      },
-      {
-        name: "North Zone",
-        lat: 34.1522,
-        lon: -118.2437,
-        needs: { water: 300, food: 500, medical: 50 },
-      },
-      {
-        name: "West Bridge",
-        lat: 34.0522,
-        lon: -118.3437,
-        needs: { water: 200, food: 300, medical: 0 },
-      },
-    ];
+    if (!response.ok) throw new Error(`Backend error ${response.status}`);
 
-    // --- DYNAMIC LEDGER ---
-    // Try to use the parsed needs from the AI
-    if (
-      collectedData.parsedNeeds &&
-      collectedData.parsedNeeds.locations &&
-      collectedData.parsedNeeds.locations.length > 0
-    ) {
-      // Give them random lat/lon for simulation
-      const baseLat = 34.05;
-      const baseLon = -118.24;
-      simLocations = collectedData.parsedNeeds.locations.map((loc, i) => ({
-        name: loc.name,
-        lat: baseLat + (Math.random() - 0.5) * 0.2 + i * 0.1,
-        lon: baseLon + (Math.random() - 0.5) * 0.2,
-        needs: {
-          // Ensure defaults
-          water: loc.needs.water || 0,
-          food: loc.needs.food || 0,
-          medical: loc.needs.medical || 0,
-        },
-      }));
-    }
-    // ------------------------
+    const planData = await response.json();
 
-    const simData = {
-      locations: simLocations,
-      depot: { name: "Main Depot (LAX)", lat: 33.9416, lon: -118.4085 },
-      // Sequential routes for "traveling salesman" path
-      routes: [
-        {
-          type: "truck",
-          from: "Main Depot (LAX)",
-          to: simLocations[0].name,
-          time: 45,
-          dist: 25,
-        },
-        {
-          type: "truck",
-          from: simLocations[0].name,
-          to: simLocations[1].name,
-          time: 30,
-          dist: 18,
-        },
-        {
-          type: "drone",
-          from: simLocations[1].name,
-          to: simLocations[2] ? simLocations[2].name : "Main Depot (LAX)",
-          time: 20,
-          dist: 15,
-        },
-      ],
-      summary: {
-        totalTime: 45, // This now means MAX delivery time
-        totalResources: simLocations.reduce(
-          (acc, loc) =>
-            acc +
-            (loc.needs.water || 0) +
-            (loc.needs.food || 0) +
-            (loc.needs.medical || 0),
-          0,
-        ),
-        totalTrucks: 2,
-        totalDrones: 1,
-      },
-      strategy: strategy,
-    };
-
-    // Adjust simulation based on strategy
-    let desc = "";
-    switch (strategy) {
-      case "welfare":
-        simData.summary.title = "Plan: Maximum Welfare";
-        desc =
-          "This plan prioritizes delivering the most resources to the largest population centers.";
-        break;
-      case "need":
-        simData.summary.title = "Plan: Highest Need";
-        desc =
-          "This plan prioritizes locations with the most critical medical needs.";
-        // Swap route to show a change
-        simData.routes[1] = {
-          type: "drone",
-          from: simLocations[0].name,
-          to: simLocations[1].name,
-          time: 20,
-          dist: 15,
-        };
-        simData.routes[2] = {
-          type: "truck",
-          from: simLocations[1].name,
-          to: simLocations[2] ? simLocations[2].name : "Main Depot (LAX)",
-          time: 30,
-          dist: 18,
-        };
-        break;
-      case "fastest":
-        simData.summary.title = "Plan: Fastest Results";
-        desc =
-          "This plan prioritizes the quickest delivery times to establish a foothold.";
-        simData.summary.totalTime = 20; // Fastest single delivery
-        break;
-    }
-
-    simData.summary.description = `${desc} The Est. Completion Time represents the longest single delivery (land or air) in the network.`;
-
-    generatedPlan = simData; // Store the plan
-    renderPlan(simData);
+    // Save and render plan
+    generatedPlan = planData;
+    renderPlan(planData);
 
     document.getElementById("plan-loader").classList.add("hidden");
     document.getElementById("plan-content").classList.remove("hidden");
-  }, 2500); // 2.5 second simulation
+  } catch (err) {
+    console.error("Optimization error:", err);
+    showErrorModal(
+      "Optimization Error",
+      `Failed to generate optimized plan: ${err.message}`,
+    );
+    showPage("confirmation-page");
+  }
 }
+
 
 /**
  * Renders the generated plan data in the UI.
