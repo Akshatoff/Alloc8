@@ -15,6 +15,7 @@
       crossorigin=""
     ></script>
     <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
     <link rel="stylesheet" href="style/style.css" />
   </head>
 
@@ -595,10 +596,12 @@
             </section>
 
             <!-- ===== 6. Plan Page ===== -->
+            <!-- ===== 6. Enhanced Plan Page with Analytics ===== -->
             <section id="plan-page" class="page-section hidden space-y-6">
               <h2 class="text-3xl font-semibold text-white">
-                Generated Distribution Plan
+                Generated Distribution Plan - Analytics Dashboard
               </h2>
+
               <div
                 id="plan-loader"
                 class="flex flex-col items-center justify-center h-96 text-gray-400"
@@ -606,7 +609,9 @@
                 <div class="loader !w-16 !h-16"></div>
                 <p class="mt-4 text-lg">Running optimizations...</p>
               </div>
+
               <div id="plan-content" class="hidden space-y-6">
+                <!-- Action Buttons -->
                 <div class="flex gap-4">
                   <button
                     id="save-plan-btn"
@@ -623,45 +628,57 @@
                     Start New Plan
                   </button>
                 </div>
-                <div class="bg-gray-800 p-6 rounded-lg shadow-xl">
+
+                <!-- Summary Card -->
+                <div
+                  class="bg-gradient-to-r from-blue-900 to-purple-900 p-6 rounded-lg shadow-xl border border-blue-700"
+                >
                   <h3
                     id="plan-title"
                     class="text-2xl font-semibold text-white mb-2"
                   >
                     Plan
                   </h3>
-                  <p id="plan-description" class="text-gray-400 mb-6">
+                  <p id="plan-description" class="text-gray-300 mb-6">
                     Description
                   </p>
                   <div
                     class="grid grid-cols-2 md:grid-cols-4 gap-4 text-center"
                   >
-                    <div>
-                      <span class="block text-sm text-gray-400">Strategy</span>
+                    <div class="bg-black/30 p-4 rounded-lg backdrop-blur">
+                      <span class="block text-sm text-gray-400 mb-1"
+                        >Strategy</span
+                      >
                       <span
                         id="stat-strategy"
                         class="text-2xl font-bold text-blue-400"
                         >-</span
                       >
                     </div>
-                    <div>
-                      <span class="block text-sm text-gray-400">Distance</span>
+                    <div class="bg-black/30 p-4 rounded-lg backdrop-blur">
+                      <span class="block text-sm text-gray-400 mb-1"
+                        >Total Distance</span
+                      >
                       <span
                         id="stat-distance"
                         class="text-2xl font-bold text-white"
                         >-</span
                       >
                     </div>
-                    <div>
-                      <span class="block text-sm text-gray-400">Resources</span>
+                    <div class="bg-black/30 p-4 rounded-lg backdrop-blur">
+                      <span class="block text-sm text-gray-400 mb-1"
+                        >Total Resources</span
+                      >
                       <span
                         id="stat-resources"
                         class="text-2xl font-bold text-white"
                         >-</span
                       >
                     </div>
-                    <div>
-                      <span class="block text-sm text-gray-400">Vehicles</span>
+                    <div class="bg-black/30 p-4 rounded-lg backdrop-blur">
+                      <span class="block text-sm text-gray-400 mb-1"
+                        >Vehicles Used</span
+                      >
                       <span
                         id="stat-vehicles"
                         class="text-2xl font-bold text-white"
@@ -670,32 +687,339 @@
                     </div>
                   </div>
                 </div>
-                <div class="h-96 w-full bg-gray-700 rounded-lg shadow-lg">
-                  <div id="plan-map" class="h-full w-full rounded-lg"></div>
+
+                <!-- Map Section -->
+                <div class="bg-gray-800 p-4 rounded-lg shadow-xl">
+                  <h3
+                    class="text-xl font-semibold text-white mb-4 flex items-center gap-2"
+                  >
+                    <i data-lucide="map" class="w-5 h-5"></i>
+                    Distribution Routes Map
+                  </h3>
+                  <div
+                    class="h-96 w-full bg-gray-700 rounded-lg shadow-lg overflow-hidden"
+                  >
+                    <div id="plan-map" class="h-full w-full"></div>
+                  </div>
                 </div>
+
+                <!-- Advanced Analytics Grid -->
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  <!-- Resource Distribution Pie Chart -->
+                  <div class="bg-gray-800 p-6 rounded-lg shadow-xl">
+                    <h3
+                      class="text-xl font-semibold text-white mb-4 flex items-center gap-2"
+                    >
+                      <i
+                        data-lucide="pie-chart"
+                        class="w-5 h-5 text-blue-400"
+                      ></i>
+                      Resource Distribution by Type
+                    </h3>
+                    <canvas id="resource-pie-chart"></canvas>
+                  </div>
+
+                  <!-- Vehicle Load Distribution -->
+                  <div class="bg-gray-800 p-6 rounded-lg shadow-xl">
+                    <h3
+                      class="text-xl font-semibold text-white mb-4 flex items-center gap-2"
+                    >
+                      <i data-lucide="truck" class="w-5 h-5 text-green-400"></i>
+                      Vehicle Load Distribution
+                    </h3>
+                    <canvas id="vehicle-load-chart"></canvas>
+                  </div>
+
+                  <!-- Distance per Route -->
+                  <div class="bg-gray-800 p-6 rounded-lg shadow-xl">
+                    <h3
+                      class="text-xl font-semibold text-white mb-4 flex items-center gap-2"
+                    >
+                      <i
+                        data-lucide="trending-up"
+                        class="w-5 h-5 text-yellow-400"
+                      ></i>
+                      Distance per Route
+                    </h3>
+                    <canvas id="distance-chart"></canvas>
+                  </div>
+
+                  <!-- Efficiency Metrics -->
+                  <div class="bg-gray-800 p-6 rounded-lg shadow-xl">
+                    <h3
+                      class="text-xl font-semibold text-white mb-4 flex items-center gap-2"
+                    >
+                      <i
+                        data-lucide="activity"
+                        class="w-5 h-5 text-purple-400"
+                      ></i>
+                      Efficiency Metrics
+                    </h3>
+                    <div class="space-y-4">
+                      <div class="bg-gray-700 p-4 rounded-lg">
+                        <div class="flex justify-between items-center mb-2">
+                          <span class="text-gray-400"
+                            >Average Load per Vehicle</span
+                          >
+                          <span
+                            id="avg-load"
+                            class="text-xl font-bold text-white"
+                            >-</span
+                          >
+                        </div>
+                        <div class="w-full bg-gray-600 rounded-full h-3">
+                          <div
+                            id="avg-load-bar"
+                            class="bg-blue-500 h-3 rounded-full transition-all"
+                            style="width: 0%"
+                          ></div>
+                        </div>
+                      </div>
+
+                      <div class="bg-gray-700 p-4 rounded-lg">
+                        <div class="flex justify-between items-center mb-2">
+                          <span class="text-gray-400"
+                            >Average Distance per Route</span
+                          >
+                          <span
+                            id="avg-distance"
+                            class="text-xl font-bold text-white"
+                            >-</span
+                          >
+                        </div>
+                        <div class="w-full bg-gray-600 rounded-full h-3">
+                          <div
+                            id="avg-distance-bar"
+                            class="bg-green-500 h-3 rounded-full transition-all"
+                            style="width: 0%"
+                          ></div>
+                        </div>
+                      </div>
+
+                      <div class="bg-gray-700 p-4 rounded-lg">
+                        <div class="flex justify-between items-center mb-2">
+                          <span class="text-gray-400">Resource Efficiency</span>
+                          <span
+                            id="efficiency-percent"
+                            class="text-xl font-bold text-white"
+                            >-</span
+                          >
+                        </div>
+                        <div class="w-full bg-gray-600 rounded-full h-3">
+                          <div
+                            id="efficiency-bar"
+                            class="bg-purple-500 h-3 rounded-full transition-all"
+                            style="width: 0%"
+                          ></div>
+                        </div>
+                      </div>
+
+                      <div class="bg-gray-700 p-4 rounded-lg">
+                        <div class="flex justify-between items-center">
+                          <span class="text-gray-400">Cost per Kilometer</span>
+                          <span
+                            id="cost-per-km"
+                            class="text-xl font-bold text-yellow-400"
+                            >-</span
+                          >
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Location-wise Resource Distribution -->
+                  <div
+                    class="bg-gray-800 p-6 rounded-lg shadow-xl lg:col-span-2"
+                  >
+                    <h3
+                      class="text-xl font-semibold text-white mb-4 flex items-center gap-2"
+                    >
+                      <i
+                        data-lucide="bar-chart-3"
+                        class="w-5 h-5 text-red-400"
+                      ></i>
+                      Location-wise Resource Allocation
+                    </h3>
+                    <canvas id="location-chart"></canvas>
+                  </div>
+                </div>
+
+                <!-- Mathematical Analysis Section -->
+                <div
+                  class="bg-gradient-to-br from-gray-800 to-gray-900 p-6 rounded-lg shadow-xl border border-gray-700"
+                >
+                  <h3
+                    class="text-2xl font-semibold text-white mb-4 flex items-center gap-2"
+                  >
+                    <i
+                      data-lucide="calculator"
+                      class="w-6 h-6 text-blue-400"
+                    ></i>
+                    Mathematical Optimization Analysis
+                  </h3>
+
+                  <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <!-- Optimization Objective Function -->
+                    <div class="bg-gray-700/50 p-4 rounded-lg">
+                      <h4 class="text-lg font-semibold text-blue-300 mb-3">
+                        Objective Function
+                      </h4>
+                      <div class="text-gray-300 space-y-2">
+                        <p class="font-mono text-sm">
+                          Minimize: Z = Σ(d<sub>ij</sub> × x<sub>ij</sub>)
+                        </p>
+                        <p class="text-xs text-gray-400">
+                          Where d<sub>ij</sub> = distance from location i to j
+                        </p>
+                        <p class="text-xs text-gray-400">
+                          x<sub>ij</sub> = 1 if route includes edge (i,j), 0
+                          otherwise
+                        </p>
+                        <p class="mt-3">
+                          <span
+                            class="text-yellow-400 font-bold"
+                            id="objective-value"
+                            >-</span
+                          >
+                        </p>
+                      </div>
+                    </div>
+
+                    <!-- Constraints -->
+                    <div class="bg-gray-700/50 p-4 rounded-lg">
+                      <h4 class="text-lg font-semibold text-green-300 mb-3">
+                        Capacity Constraints
+                      </h4>
+                      <div class="text-gray-300 space-y-2">
+                        <p class="font-mono text-sm">
+                          Σ(demand<sub>i</sub>) ≤ capacity<sub>v</sub>
+                        </p>
+                        <p class="text-xs text-gray-400">For each vehicle v</p>
+                        <div
+                          id="constraint-details"
+                          class="mt-3 text-sm space-y-1"
+                        ></div>
+                      </div>
+                    </div>
+
+                    <!-- Complexity Analysis -->
+                    <div class="bg-gray-700/50 p-4 rounded-lg">
+                      <h4 class="text-lg font-semibold text-purple-300 mb-3">
+                        Computational Complexity
+                      </h4>
+                      <div class="text-gray-300 space-y-2">
+                        <p class="text-sm">
+                          Problem Type:
+                          <span class="font-bold text-purple-400"
+                            >VRP (NP-Hard)</span
+                          >
+                        </p>
+                        <p class="text-sm">
+                          Time Complexity:
+                          <span
+                            class="font-mono text-yellow-400"
+                            id="time-complexity"
+                            >-</span
+                          >
+                        </p>
+                        <p class="text-sm">
+                          Search Space:
+                          <span
+                            class="font-mono text-blue-400"
+                            id="search-space"
+                            >-</span
+                          >
+                        </p>
+                        <p class="text-sm">
+                          Algorithm:
+                          <span class="text-green-400"
+                            >Guided Local Search</span
+                          >
+                        </p>
+                      </div>
+                    </div>
+
+                    <!-- Solution Quality -->
+                    <div class="bg-gray-700/50 p-4 rounded-lg">
+                      <h4 class="text-lg font-semibold text-red-300 mb-3">
+                        Solution Quality Metrics
+                      </h4>
+                      <div class="text-gray-300 space-y-2">
+                        <p class="text-sm">
+                          Load Balance Index:
+                          <span
+                            class="font-bold text-blue-400"
+                            id="load-balance"
+                            >-</span
+                          >
+                        </p>
+                        <p class="text-sm">
+                          Route Utilization:
+                          <span
+                            class="font-bold text-green-400"
+                            id="route-utilization"
+                            >-</span
+                          >
+                        </p>
+                        <p class="text-sm">
+                          Optimality Gap:
+                          <span
+                            class="font-bold text-yellow-400"
+                            id="optimality-gap"
+                            >-</span
+                          >
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Formula Explanations -->
+                  <div
+                    class="mt-6 bg-gray-700/30 p-4 rounded-lg border border-gray-600"
+                  >
+                    <h4
+                      class="text-md font-semibold text-white mb-3 flex items-center gap-2"
+                    >
+                      <i data-lucide="info" class="w-4 h-4"></i>
+                      How This Solution Was Calculated
+                    </h4>
+                    <div
+                      class="text-sm text-gray-300 space-y-2"
+                      id="calculation-explanation"
+                    >
+                      <!-- Will be populated dynamically -->
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Resource Ledger Table -->
                 <div class="bg-gray-800 rounded-lg shadow-xl overflow-hidden">
                   <h3
-                    class="text-xl font-semibold text-white p-4 border-b border-gray-700"
+                    class="text-xl font-semibold text-white p-4 border-b border-gray-700 flex items-center gap-2"
                   >
-                    Resource Ledger
+                    <i data-lucide="table" class="w-5 h-5"></i>
+                    Resource Allocation Ledger
                   </h3>
-                  <table class="w-full text-left">
-                    <thead
-                      class="bg-gray-700/50 text-gray-300 uppercase text-sm"
-                    >
-                      <tr>
-                        <th class="p-3">Location</th>
-                        <th class="p-3">Water (L)</th>
-                        <th class="p-3">Food (MRE)</th>
-                        <th class="p-3">Medical (Kits)</th>
-                        <th class="p-3">Total Units</th>
-                      </tr>
-                    </thead>
-                    <tbody
-                      id="ledger-body"
-                      class="divide-y divide-gray-700"
-                    ></tbody>
-                  </table>
+                  <div class="overflow-x-auto">
+                    <table class="w-full text-left">
+                      <thead
+                        class="bg-gray-700/50 text-gray-300 uppercase text-sm"
+                      >
+                        <tr>
+                          <th class="p-3">Location</th>
+                          <th class="p-3">Water (L)</th>
+                          <th class="p-3">Food (MRE)</th>
+                          <th class="p-3">Medical (Kits)</th>
+                          <th class="p-3">Total Units</th>
+                          <th class="p-3">% of Total</th>
+                        </tr>
+                      </thead>
+                      <tbody
+                        id="ledger-body"
+                        class="divide-y divide-gray-700"
+                      ></tbody>
+                    </table>
+                  </div>
                 </div>
               </div>
             </section>
