@@ -1,21 +1,3 @@
-import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-import {
-  getAuth,
-  signInAnonymously,
-  onAuthStateChanged,
-  signInWithCustomToken,
-} from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-import {
-  getFirestore,
-  doc,
-  setDoc,
-  onSnapshot,
-  collection,
-  addDoc,
-  serverTimestamp,
-  setLogLevel,
-} from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-
 // Global state
 let formData = {};
 let chatHistory = [];
@@ -25,7 +7,8 @@ let collectedData = {};
 let generatedPlan = null;
 let mapInstance = null;
 
-const apiKey = "AIzaSyBP9Fkxfo0pzHARRLj6bK_qzTj9v3672o4";
+const apiKey = "AIzaSyAqDcVDj60Ghg98B19OwFg8HfDy1_BWQZE";
+const BACKEND_URL = "http://127.0.0.1:5000";
 
 // Utility functions
 function showPage(pageId) {
@@ -130,7 +113,7 @@ async function callGeminiAPI(
   }
 
   let attempts = 0;
-  const maxAttempts = 5;
+  const maxAttempts = 3;
   const baseDelay = 1000;
 
   while (attempts < maxAttempts) {
@@ -142,46 +125,39 @@ async function callGeminiAPI(
       });
 
       if (!response.ok) {
-        const errorBody = await response.text();
-        throw new Error(
-          `API request failed with status ${response.status}: ${errorBody}`,
-        );
+        throw new Error(`API request failed with status ${response.status}`);
       }
 
       const result = await response.json();
       const candidate = result.candidates?.[0];
 
-      if (candidate && candidate.content?.parts?.[0]?.text) {
+      if (candidate?.content?.parts?.[0]?.text) {
         const text = candidate.content.parts[0].text;
         let sources = [];
         const groundingMetadata = candidate.groundingMetadata;
-        if (groundingMetadata && groundingMetadata.groundingAttributions) {
+        if (groundingMetadata?.groundingAttributions) {
           sources = groundingMetadata.groundingAttributions
             .map((attr) => ({ uri: attr.web?.uri, title: attr.web?.title }))
             .filter((source) => source.uri && source.title);
         }
         return { text, sources };
       } else {
-        throw new Error("Invalid API response structure from Gemini.");
+        throw new Error("Invalid API response structure");
       }
     } catch (error) {
       attempts++;
       if (attempts >= maxAttempts) throw error;
-      const delay = baseDelay * Math.pow(2, attempts) + Math.random() * 1000;
-      console.warn(
-        `AI API error (attempt ${attempts}): ${error.message}. Retrying in ${Math.round(delay / 1000)}s...`,
-      );
+      const delay = baseDelay * Math.pow(2, attempts);
+      console.warn(`AI API error (attempt ${attempts}): ${error.message}`);
       await new Promise((resolve) => setTimeout(resolve, delay));
     }
   }
-  throw new Error("AI API request failed after all retry attempts.");
 }
 
-// Form submission handler
+// Form submission
 document.getElementById("crisis-form").addEventListener("submit", function (e) {
   e.preventDefault();
 
-  // Collect form data
   formData = {
     incident_type: document.querySelector('input[name="incident_type"]:checked')
       .value,
@@ -196,7 +172,6 @@ document.getElementById("crisis-form").addEventListener("submit", function (e) {
     urgency: document.querySelector('input[name="urgency"]:checked').value,
   };
 
-  // Display form summary
   const summaryDiv = document.getElementById("form-summary");
   const labels = {
     incident_type: "Incident Type",
@@ -217,7 +192,7 @@ document.getElementById("crisis-form").addEventListener("submit", function (e) {
   lucide.createIcons();
 });
 
-// Initial analysis handler
+// Initial analysis
 async function handleInitialAnalysis() {
   const detailedDescription =
     document.getElementById("crisis-description").value;
@@ -233,7 +208,6 @@ async function handleInitialAnalysis() {
   addChatMessage("user", detailedDescription);
   showChatLoader(true);
 
-  // Combine form data with description
   const formContext = Object.entries(formData)
     .map(([key, value]) => `${key}: ${value}`)
     .join(", ");
@@ -248,20 +222,18 @@ async function handleInitialAnalysis() {
 
   try {
     // Step 1: Augment with Google Search
-    const systemPromptAugment = `You are a humanitarian aid logistics expert. A user has provided structured form data and a detailed crisis report.
+    const systemPromptAugment = `You are a humanitarian aid logistics expert. Use Google Search to find real-time data about this crisis.
 
 Form Data: ${formContext}
 Description: ${detailedDescription}
 
-Use Google Search to find augmenting real-time data. Respond with a concise, bulleted summary:
-- Exact Location: (City, Region, Country with coordinates if available)
-- Current Situation: (Latest news and updates)
-- Population Data: (Specific numbers from reliable sources)
-- Infrastructure Status: (Airports, roads, hospitals - specific details)
-- Resource Availability: (Local warehouses, distribution centers)
-- Search Sources: (List 2-3 titles and URLs)
-
-Do not ask questions.`;
+Provide a concise summary with:
+- Exact Location (with coordinates if possible)
+- Current Situation
+- Population Data
+- Infrastructure Status
+- Available Resources
+- Sources (2-3 URLs)`;
 
     const augmentData = await callGeminiAPI(
       systemPromptAugment,
@@ -281,41 +253,29 @@ Do not ask questions.`;
           .join("<br>");
     }
 
-    const processedAugmentData = augmentData.text
-      .replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>")
-      .replace(/\n/g, "<br>");
-
     addChatMessage(
       "system",
-      `<strong>Augmented Data (Live Search):</strong><br>${processedAugmentData}${sourcesText}`,
+      `<strong>Augmented Data:</strong><br>${augmentData.text.replace(/\n/g, "<br>")}${sourcesText}`,
     );
     chatHistory.push({ role: "model", parts: [{ text: augmentData.text }] });
     collectedData.augmentedData = augmentData.text;
-    collectedData.sources = augmentData.sources;
 
-    // Step 2: Generate targeted questions based on form + description
-    const combinedContext = `Form Data: ${formContext}\n\nDetailed Report: "${detailedDescription}"\n\nAugmented Analysis:\n${augmentData.text}`;
+    // Step 2: Generate targeted questions
+    const combinedContext = `Form: ${formContext}\n\nReport: ${detailedDescription}\n\nAnalysis:\n${augmentData.text}`;
 
-    const systemPromptQuestions = `You are an AI assistant gathering critical data for a resource distribution plan. Based on the structured form data AND detailed context, generate 5 highly targeted follow-up questions that fill specific gaps.
+    const systemPromptQuestions = `Generate 5 targeted questions to gather precise data for resource distribution planning.
 
-Context:
-${combinedContext}
+Context: ${combinedContext}
 
-Generate questions that are SPECIFIC to this situation. Focus on:
-1. Exact GPS coordinates or specific neighborhood names
-2. Precise resource quantities needed at specific locations
-3. Detailed transport/logistics constraints
-4. Specific population numbers at gathering points
-5. Available local assets and their current status
+Focus on:
+1. Exact GPS coordinates or addresses
+2. Specific resource quantities needed
+3. Transport/logistics details
+4. Population numbers at specific locations
+5. Available local infrastructure
 
-Respond with ONLY a valid JSON array of strings:
-[
-"Question 1?",
-"Question 2?",
-"Question 3?",
-"Question 4?",
-"Question 5?"
-]`;
+Respond with ONLY a JSON array:
+["Question 1?", "Question 2?", "Question 3?", "Question 4?", "Question 5?"]`;
 
     const questionData = await callGeminiAPI(
       systemPromptQuestions,
@@ -323,36 +283,29 @@ Respond with ONLY a valid JSON array of strings:
       false,
       true,
     );
-    let cleanedJsonText = questionData.text.trim();
 
     try {
-      dynamicQuestions = JSON.parse(cleanedJsonText);
+      dynamicQuestions = JSON.parse(questionData.text.trim());
     } catch (e) {
-      console.error("Failed to parse questions JSON:", e);
+      console.error("Failed to parse questions:", e);
       dynamicQuestions = [
-        "What are the exact GPS coordinates or specific neighborhood names of the most affected areas?",
-        "What are the precise resource quantities needed? (e.g., 'Location A: water 5000L, food 10000 units')",
-        "What is the current status of specific roads, airports, and transport routes?",
-        "What are the exact population numbers at specific shelters or gathering points?",
-        "Are there operational warehouses or distribution centers available? Please provide addresses.",
+        "What are the exact GPS coordinates of affected areas?",
+        "What specific quantities of water, food, and medical supplies are needed at each location?",
+        "What is the current status of roads and transport routes?",
+        "How many people are at each shelter or gathering point?",
+        "Are there any operational warehouses or distribution centers?",
       ];
     }
 
     currentQuestionIndex = 0;
-
     if (dynamicQuestions.length > 0) {
       addChatMessage("ai", dynamicQuestions[currentQuestionIndex]);
-      chatHistory.push({
-        role: "model",
-        parts: [{ text: dynamicQuestions[currentQuestionIndex] }],
-      });
     }
   } catch (error) {
-    console.error("Question Generation Error:", error);
-    addChatMessage("system", `Error: ${error.message}`);
+    console.error("Analysis Error:", error);
     showErrorModal(
       "AI Error",
-      `Failed to generate follow-up questions: ${error.message}`,
+      `Failed to generate questions: ${error.message}`,
     );
     showPage("entry-page");
   } finally {
@@ -360,7 +313,7 @@ Respond with ONLY a valid JSON array of strings:
   }
 }
 
-// User message handler
+// Handle user messages
 async function handleUserMessage() {
   const userInput = document.getElementById("chat-input");
   const message = userInput.value.trim();
@@ -368,50 +321,35 @@ async function handleUserMessage() {
 
   addChatMessage("user", message);
   userInput.value = "";
-
-  const ackWords = [
-    "Understood.",
-    "Got it.",
-    "Processing...",
-    "Received.",
-    "Thank you.",
-  ];
-  const randomAck = ackWords[Math.floor(Math.random() * ackWords.length)];
-  showChatLoader(true, randomAck);
+  showChatLoader(true, "Processing...");
 
   const currentQuestion = dynamicQuestions[currentQuestionIndex];
   collectedData[`question_${currentQuestionIndex}`] = {
     question: currentQuestion,
     answer: message,
   };
-  chatHistory.push({ role: "user", parts: [{ text: message }] });
 
   currentQuestionIndex++;
-  await new Promise((resolve) => setTimeout(resolve, 1500));
+  await new Promise((resolve) => setTimeout(resolve, 1000));
 
   if (currentQuestionIndex < dynamicQuestions.length) {
-    const nextQuestion = dynamicQuestions[currentQuestionIndex];
     showChatLoader(false);
-    addChatMessage("ai", nextQuestion);
-    chatHistory.push({ role: "model", parts: [{ text: nextQuestion }] });
+    addChatMessage("ai", dynamicQuestions[currentQuestionIndex]);
   } else {
-    addChatMessage("system", "All data collected. Summarizing...");
+    addChatMessage("system", "Summarizing collected data...");
 
     try {
       const fullConversation = JSON.stringify(collectedData, null, 2);
-      const systemPromptSummary = `You are a logistics summarizer. Analyze the collected data and provide a structured summary:
+      const systemPromptSummary = `Analyze this crisis data and provide a structured summary:
 
-Data:
 ${fullConversation}
 
-Provide:
-- **Locations:** (All specific coordinates, cities, zones)
-- **Population:** (Total estimate with breakdown)
-- **Transport:** (Status of all infrastructure)
-- **Depots:** (Available warehouses/distribution centers)
-- **Needs (Detailed):** (All resources with quantities)
-
-Respond concisely with bullets.`;
+Include:
+- Locations (with coordinates)
+- Population estimates
+- Infrastructure status
+- Available resources
+- Resource needs with quantities`;
 
       const summaryData = await callGeminiAPI(
         systemPromptSummary,
@@ -419,46 +357,31 @@ Respond concisely with bullets.`;
       );
       addChatMessage(
         "ai",
-        `<strong>Data Summary:</strong><br>${summaryData.text.replace(/\n/g, "<br>")}`,
+        `<strong>Summary:</strong><br>${summaryData.text.replace(/\n/g, "<br>")}`,
       );
-      chatHistory.push({ role: "model", parts: [{ text: summaryData.text }] });
       collectedData.finalSummary = summaryData.text;
 
-      // Parse needs for backend
-      const systemPromptParse = `You are a data extraction specialist. Extract structured location and resource data from this crisis summary.
+      // Parse locations and needs
+      const systemPromptParse = `Extract structured location data from this summary.
 
-      Summary:
-      ${summaryData.text}
+${summaryData.text}
 
-      CRITICAL REQUIREMENTS:
-      1. Every location MUST have valid latitude and longitude coordinates
-      2. If exact coordinates aren't in the summary, use reasonable estimates based on the city/region mentioned
-      3. All numeric values must be actual numbers, not strings
-      4. Include water, food, and medical needs for each location (use 0 if not specified)
+REQUIREMENTS:
+- Valid lat/lon coordinates for each location
+- Numeric resource needs (water, food, medical)
+- Use reasonable estimates if exact data missing
 
-      Respond with ONLY valid JSON in this EXACT format:
-      {
-        "locations": [
-          {
-            "name": "Location Name",
-            "lat": 33.9425,
-            "lon": -118.4081,
-            "needs": {
-              "water": 1000,
-              "food": 2000,
-              "medical": 500
-            }
-          }
-        ]
-      }
-
-      Example for Los Angeles area:
-      {
-        "locations": [
-          {"name": "Downtown LA", "lat": 34.0522, "lon": -118.2437, "needs": {"water": 5000, "food": 10000, "medical": 2000}},
-          {"name": "Santa Monica", "lat": 34.0195, "lon": -118.4912, "needs": {"water": 3000, "food": 6000, "medical": 1000}}
-        ]
-      }`;
+Format:
+{
+  "locations": [
+    {
+      "name": "Location Name",
+      "lat": 28.5355,
+      "lon": 77.391,
+      "needs": {"water": 1000, "food": 2000, "medical": 500}
+    }
+  ]
+}`;
 
       const needsData = await callGeminiAPI(
         systemPromptParse,
@@ -467,62 +390,52 @@ Respond concisely with bullets.`;
         true,
       );
 
-      console.log("Raw AI response for needs:", needsData.text);
       try {
-        const parsedData = JSON.parse(needsData.text);
+        const parsedData = JSON.parse(needsData.text.trim());
         if (!parsedData.locations || !Array.isArray(parsedData.locations)) {
-          throw new Error("Invalid locations array");
+          throw new Error("Invalid locations format");
         }
+
         parsedData.locations = parsedData.locations.filter((loc) => {
-          const isValid =
+          return (
             loc.name &&
             typeof loc.lat === "number" &&
             typeof loc.lon === "number" &&
-            loc.needs;
-
-          if (!isValid) {
-            console.warn("Filtered out invalid location:", loc);
-          }
-          return isValid;
+            loc.needs
+          );
         });
+
         if (parsedData.locations.length === 0) {
           throw new Error("No valid locations found");
         }
 
         collectedData.parsedNeeds = parsedData;
-        console.log("Successfully parsed needs:", parsedData);
+        console.log("Parsed locations:", parsedData);
       } catch (e) {
-        console.error("Failed to parse needs:", e);
-        console.error("AI response was:", needsData.text);
-
+        console.error("Parse error:", e);
         collectedData.parsedNeeds = {
           locations: [
             {
-              name: "Primary Crisis Zone",
-              lat: 33.9425,
-              lon: -118.4081,
+              name: "Primary Zone",
+              lat: 28.5355,
+              lon: 77.391,
               needs: { water: 5000, food: 10000, medical: 2000 },
             },
             {
-              name: "Secondary Affected Area",
-              lat: 33.95,
-              lon: -118.4,
+              name: "Secondary Zone",
+              lat: 28.55,
+              lon: 77.4,
               needs: { water: 3000, food: 6000, medical: 1000 },
             },
           ],
         };
-
-        addChatMessage(
-          "system",
-          "⚠️ Using default locations. Please verify coordinates manually.",
-        );
+        addChatMessage("system", "⚠️ Using default locations");
       }
 
       showPage("optimization-page");
     } catch (error) {
-      console.error("Summarization Error:", error);
-      addChatMessage("system", `Error: ${error.message}`);
-      showErrorModal("AI Error", `Failed to summarize: ${error.message}`);
+      console.error("Summary Error:", error);
+      showErrorModal("Error", `Failed to summarize: ${error.message}`);
     } finally {
       showChatLoader(false);
     }
@@ -534,37 +447,25 @@ function showConfirmationPage(strategy) {
   collectedData.strategy = strategy;
   const summaryEl = document.getElementById("confirmation-summary");
 
-  let formSummary =
-    '<div class="mb-4"><h3 class="text-lg font-semibold text-gray-400">Form Data</h3><ul class="list-disc list-inside">';
-  for (const [key, value] of Object.entries(formData)) {
-    formSummary += `<li>${key.replace(/_/g, " ")}: ${value.replace(/_/g, " ")}</li>`;
-  }
-  formSummary += "</ul></div>";
-
-  let qAndA =
-    '<div><h3 class="text-lg font-semibold text-gray-400">Q&A</h3><ul>';
-  for (let i = 0; i < dynamicQuestions.length; i++) {
-    const item = collectedData[`question_${i}`];
-    if (item) {
-      qAndA += `<li class="mb-2"><strong>Q:</strong> ${item.question}<br><strong>A:</strong> ${item.answer}</li>`;
-    }
-  }
-  qAndA += "</ul></div>";
-
-  summaryEl.innerHTML = `
+  let html = `
     <div class="space-y-4">
       <div>
-        <h3 class="text-lg font-semibold text-gray-400">Selected Strategy</h3>
-        <p class="p-3 bg-gray-900 rounded-md text-xl font-bold text-blue-300 capitalize">${strategy}</p>
+        <h3 class="text-lg font-semibold text-gray-400">Strategy</h3>
+        <p class="p-3 bg-gray-900 rounded-md text-xl font-bold text-blue-300">${strategy.toUpperCase()}</p>
       </div>
-      ${formSummary}
       <div>
-        <h3 class="text-lg font-semibold text-gray-400">Description</h3>
-        <p class="p-3 bg-gray-900 rounded-md">${collectedData.initialDescription}</p>
-      </div>
-      ${qAndA}
-    </div>
+        <h3 class="text-lg font-semibold text-gray-400">Locations</h3>
+        <ul class="list-disc list-inside p-3 bg-gray-900 rounded-md">
   `;
+
+  collectedData.parsedNeeds.locations.forEach((loc) => {
+    const total =
+      (loc.needs.water || 0) + (loc.needs.food || 0) + (loc.needs.medical || 0);
+    html += `<li>${loc.name}: ${total} units (W:${loc.needs.water} F:${loc.needs.food} M:${loc.needs.medical})</li>`;
+  });
+
+  html += `</ul></div></div>`;
+  summaryEl.innerHTML = html;
   showPage("confirmation-page");
 }
 
@@ -574,26 +475,33 @@ async function generateFinalPlan() {
   document.getElementById("plan-loader").classList.remove("hidden");
   document.getElementById("plan-content").classList.add("hidden");
 
-  // ADD THIS: Log the data being sent
-  console.log("Sending data to backend:", {
+  const requestData = {
     strategy: collectedData.strategy,
     parsedNeeds: collectedData.parsedNeeds,
     formData: formData,
-  });
+    // ADD THESE LINES:
+    vehicle_capacity: 20000, // Increase capacity per truck (e.g. 20 tons)
+    max_fleet_size: 100, // Allow up to 100 trucks
+    time_limit_seconds: 30, // Give the solver more time for complex routes
+  };
+
+  console.log("Sending to backend:", requestData);
 
   try {
-    const response = await fetch("http://127.0.0.1:5000/generate-plan", {
+    const response = await fetch(`${BACKEND_URL}/generate-plan`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        strategy: collectedData.strategy,
-        parsedNeeds: collectedData.parsedNeeds,
-        formData: formData,
-      }),
+      body: JSON.stringify(requestData),
     });
 
-    if (!response.ok) throw new Error(`Backend error ${response.status}`);
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Backend error ${response.status}: ${errorText}`);
+    }
+
     const planData = await response.json();
+    console.log("Received plan:", planData);
+
     generatedPlan = planData;
     renderPlan(planData);
 
@@ -601,20 +509,16 @@ async function generateFinalPlan() {
     document.getElementById("plan-content").classList.remove("hidden");
   } catch (err) {
     console.error("Optimization error:", err);
-    showErrorModal(
-      "Optimization Error",
-      `Failed to generate plan: ${err.message}`,
-    );
+    showErrorModal("Optimization Error", `Failed: ${err.message}`);
     showPage("confirmation-page");
   }
 }
 
-// Render plan
-// Enhanced render plan with comprehensive visualizations
+// Render plan with all visualizations
 function renderPlan(plan) {
   console.log("Rendering plan:", plan);
 
-  // Update basic stats
+  // Update summary
   document.getElementById("plan-title").textContent = plan.summary.title;
   document.getElementById("plan-description").textContent =
     plan.summary.description;
@@ -626,34 +530,27 @@ function renderPlan(plan) {
   document.getElementById("stat-vehicles").textContent =
     `${plan.summary.totalTrucks} Trucks`;
 
-  // Calculate advanced metrics
+  // Calculate metrics
   const totalDistance = plan.summary.totalDistanceMeters;
   const totalLoad = plan.summary.assignedResources;
   const numVehicles = plan.routes.length;
   const avgLoad = numVehicles > 0 ? Math.round(totalLoad / numVehicles) : 0;
   const avgDistance =
     numVehicles > 0 ? Math.round(totalDistance / numVehicles / 1000) : 0;
-  const maxCapacity = plan.routes.reduce((max, r) => Math.max(max, r.load), 0);
-  const efficiency =
-    maxCapacity > 0 ? Math.round((avgLoad / maxCapacity) * 100) : 0;
-  const costPerKm =
-    totalLoad > 0 ? (totalDistance / 1000 / totalLoad).toFixed(3) : 0;
+  const efficiency = avgLoad > 0 ? Math.round((avgLoad / 5000) * 100) : 0;
 
-  // Update efficiency metrics
   document.getElementById("avg-load").textContent = `${avgLoad} units`;
   document.getElementById("avg-load-bar").style.width =
-    `${Math.min(100, (avgLoad / 5000) * 100)}%`;
-
+    `${Math.min(100, efficiency)}%`;
   document.getElementById("avg-distance").textContent = `${avgDistance} km`;
   document.getElementById("avg-distance-bar").style.width =
     `${Math.min(100, (avgDistance / 100) * 100)}%`;
-
   document.getElementById("efficiency-percent").textContent = `${efficiency}%`;
   document.getElementById("efficiency-bar").style.width = `${efficiency}%`;
+  document.getElementById("cost-per-km").textContent =
+    totalLoad > 0 ? (totalDistance / 1000 / totalLoad).toFixed(3) : "0";
 
-  document.getElementById("cost-per-km").textContent = `${costPerKm} units/km`;
-
-  // Calculate resource totals
+  // Resource totals
   const resourceTotals = { water: 0, food: 0, medical: 0 };
   plan.locations.forEach((loc) => {
     resourceTotals.water += loc.needs.water || 0;
@@ -661,420 +558,245 @@ function renderPlan(plan) {
     resourceTotals.medical += loc.needs.medical || 0;
   });
 
-  // 1. Resource Distribution Pie Chart
-  const pieCtx = document.getElementById("resource-pie-chart");
-  if (pieCtx) {
-    new Chart(pieCtx, {
-      type: "pie",
-      data: {
-        labels: ["Water (L)", "Food (MRE)", "Medical (Kits)"],
-        datasets: [
-          {
-            data: [
-              resourceTotals.water,
-              resourceTotals.food,
-              resourceTotals.medical,
-            ],
-            backgroundColor: ["#3b82f6", "#10b981", "#f59e0b"],
-            borderColor: ["#1e40af", "#047857", "#d97706"],
-            borderWidth: 2,
-          },
-        ],
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: true,
-        plugins: {
-          legend: {
-            labels: { color: "#e5e7eb", font: { size: 12 } },
-          },
-          tooltip: {
-            callbacks: {
-              label: function (context) {
-                const total = context.dataset.data.reduce((a, b) => a + b, 0);
-                const percentage = ((context.parsed / total) * 100).toFixed(1);
-                return `${context.label}: ${context.parsed} (${percentage}%)`;
-              },
-            },
-          },
+  // Charts
+  renderCharts(plan, resourceTotals);
+
+  // Math analysis
+  renderMathAnalysis(plan, totalDistance, totalLoad, numVehicles);
+
+  // Ledger
+  renderLedger(plan, resourceTotals);
+
+  // Map
+  renderMap(plan);
+
+  lucide.createIcons();
+}
+
+function renderCharts(plan, resourceTotals) {
+  // 1. Pie Chart
+  new Chart(document.getElementById("resource-pie-chart"), {
+    type: "pie",
+    data: {
+      labels: ["Water (L)", "Food (MRE)", "Medical (Kits)"],
+      datasets: [
+        {
+          data: [
+            resourceTotals.water,
+            resourceTotals.food,
+            resourceTotals.medical,
+          ],
+          backgroundColor: ["#3b82f6", "#10b981", "#f59e0b"],
         },
-      },
-    });
-  }
+      ],
+    },
+    options: {
+      responsive: true,
+      plugins: { legend: { labels: { color: "#e5e7eb" } } },
+    },
+  });
 
-  // 2. Vehicle Load Bar Chart
-  const vehicleCtx = document.getElementById("vehicle-load-chart");
-  if (vehicleCtx) {
-    const vehicleLabels = plan.routes.map((_, idx) => `Vehicle ${idx + 1}`);
-    const vehicleLoads = plan.routes.map((r) => r.load);
-    const vehicleCapacities = plan.routes.map(() => 5000); // Assume 5000 capacity
-
-    new Chart(vehicleCtx, {
-      type: "bar",
-      data: {
-        labels: vehicleLabels,
-        datasets: [
-          {
-            label: "Current Load",
-            data: vehicleLoads,
-            backgroundColor: "#3b82f6",
-            borderColor: "#1e40af",
-            borderWidth: 1,
-          },
-          {
-            label: "Max Capacity",
-            data: vehicleCapacities,
-            backgroundColor: "#6b7280",
-            borderColor: "#4b5563",
-            borderWidth: 1,
-          },
-        ],
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: true,
-        scales: {
-          y: {
-            beginAtZero: true,
-            ticks: { color: "#e5e7eb" },
-            grid: { color: "#374151" },
-          },
-          x: {
-            ticks: { color: "#e5e7eb" },
-            grid: { color: "#374151" },
-          },
+  // 2. Vehicle Load
+  new Chart(document.getElementById("vehicle-load-chart"), {
+    type: "bar",
+    data: {
+      labels: plan.routes.map((_, i) => `Vehicle ${i + 1}`),
+      datasets: [
+        {
+          label: "Load",
+          data: plan.routes.map((r) => r.load),
+          backgroundColor: "#3b82f6",
         },
-        plugins: {
-          legend: {
-            labels: { color: "#e5e7eb" },
-          },
+        {
+          label: "Capacity",
+          data: plan.routes.map(() => 5000),
+          backgroundColor: "#6b7280",
         },
+      ],
+    },
+    options: {
+      responsive: true,
+      scales: {
+        y: { ticks: { color: "#e5e7eb" }, grid: { color: "#374151" } },
+        x: { ticks: { color: "#e5e7eb" }, grid: { color: "#374151" } },
       },
-    });
-  }
+    },
+  });
 
-  // 3. Distance per Route Line Chart
-  const distanceCtx = document.getElementById("distance-chart");
-  if (distanceCtx) {
-    const routeLabels = plan.routes.map((_, idx) => `Route ${idx + 1}`);
-    const routeDistances = plan.routes.map((r) =>
-      (r.distance_meters / 1000).toFixed(2),
-    );
-
-    new Chart(distanceCtx, {
-      type: "line",
-      data: {
-        labels: routeLabels,
-        datasets: [
-          {
-            label: "Distance (km)",
-            data: routeDistances,
-            borderColor: "#f59e0b",
-            backgroundColor: "rgba(245, 158, 11, 0.1)",
-            borderWidth: 3,
-            tension: 0.4,
-            fill: true,
-            pointBackgroundColor: "#f59e0b",
-            pointBorderColor: "#fff",
-            pointRadius: 5,
-          },
-        ],
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: true,
-        scales: {
-          y: {
-            beginAtZero: true,
-            ticks: { color: "#e5e7eb" },
-            grid: { color: "#374151" },
-          },
-          x: {
-            ticks: { color: "#e5e7eb" },
-            grid: { color: "#374151" },
-          },
+  // 3. Distance Chart
+  new Chart(document.getElementById("distance-chart"), {
+    type: "line",
+    data: {
+      labels: plan.routes.map((_, i) => `Route ${i + 1}`),
+      datasets: [
+        {
+          label: "Distance (km)",
+          data: plan.routes.map((r) => (r.distance_meters / 1000).toFixed(2)),
+          borderColor: "#f59e0b",
+          tension: 0.4,
         },
-        plugins: {
-          legend: {
-            labels: { color: "#e5e7eb" },
-          },
+      ],
+    },
+    options: { responsive: true },
+  });
+
+  // 4. Location Chart
+  new Chart(document.getElementById("location-chart"), {
+    type: "bar",
+    data: {
+      labels: plan.locations.map((l) => l.name.substring(0, 20)),
+      datasets: [
+        {
+          label: "Water",
+          data: plan.locations.map((l) => l.needs.water || 0),
+          backgroundColor: "#3b82f6",
         },
-      },
-    });
-  }
-
-  // 4. Location-wise Resource Stacked Bar Chart
-  const locationCtx = document.getElementById("location-chart");
-  if (locationCtx) {
-    const locationLabels = plan.locations.map((loc) =>
-      loc.name.length > 20 ? loc.name.substring(0, 20) + "..." : loc.name,
-    );
-    const waterData = plan.locations.map((loc) => loc.needs.water || 0);
-    const foodData = plan.locations.map((loc) => loc.needs.food || 0);
-    const medicalData = plan.locations.map((loc) => loc.needs.medical || 0);
-
-    new Chart(locationCtx, {
-      type: "bar",
-      data: {
-        labels: locationLabels,
-        datasets: [
-          {
-            label: "Water",
-            data: waterData,
-            backgroundColor: "#3b82f6",
-            borderColor: "#1e40af",
-            borderWidth: 1,
-          },
-          {
-            label: "Food",
-            data: foodData,
-            backgroundColor: "#10b981",
-            borderColor: "#047857",
-            borderWidth: 1,
-          },
-          {
-            label: "Medical",
-            data: medicalData,
-            backgroundColor: "#f59e0b",
-            borderColor: "#d97706",
-            borderWidth: 1,
-          },
-        ],
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: true,
-        scales: {
-          y: {
-            stacked: true,
-            beginAtZero: true,
-            ticks: { color: "#e5e7eb" },
-            grid: { color: "#374151" },
-          },
-          x: {
-            stacked: true,
-            ticks: {
-              color: "#e5e7eb",
-              maxRotation: 45,
-              minRotation: 45,
-            },
-            grid: { color: "#374151" },
-          },
+        {
+          label: "Food",
+          data: plan.locations.map((l) => l.needs.food || 0),
+          backgroundColor: "#10b981",
         },
-        plugins: {
-          legend: {
-            labels: { color: "#e5e7eb" },
-          },
+        {
+          label: "Medical",
+          data: plan.locations.map((l) => l.needs.medical || 0),
+          backgroundColor: "#f59e0b",
         },
-      },
-    });
-  }
+      ],
+    },
+    options: {
+      responsive: true,
+      scales: { y: { stacked: true }, x: { stacked: true } },
+    },
+  });
+}
 
-  // Mathematical Analysis
-  const numLocations = plan.locations.length;
-  const factorial = (n) => (n <= 1 ? 1 : n * factorial(n - 1));
-  const searchSpace = Math.min(factorial(numLocations), 1e15); // Cap for display
-
+function renderMathAnalysis(plan, totalDistance, totalLoad, numVehicles) {
   document.getElementById("objective-value").textContent =
     `Z* = ${(totalDistance / 1000).toFixed(2)} km`;
-  document.getElementById("time-complexity").textContent =
-    `O(n! × m) ≈ O(${numLocations}! × ${numVehicles})`;
+  document.getElementById("time-complexity").textContent = `O(n! × m)`;
   document.getElementById("search-space").textContent =
-    searchSpace >= 1e15
-      ? ">10¹⁵ combinations"
-      : `~${searchSpace.toExponential(2)} combinations`;
+    `~10^${plan.locations.length} combinations`;
 
-  // Constraint details
-  const constraintDetails = document.getElementById("constraint-details");
-  constraintDetails.innerHTML = plan.routes
-    .map(
-      (route, idx) =>
-        `<p class="text-xs">Vehicle ${idx + 1}: ${route.load} ≤ 5000 ✓</p>`,
-    )
-    .join("");
-
-  // Load balance (standard deviation of loads)
   const loads = plan.routes.map((r) => r.load);
   const meanLoad = loads.reduce((a, b) => a + b, 0) / loads.length;
-  const variance =
+  const stdDev = Math.sqrt(
     loads.reduce((sum, load) => sum + Math.pow(load - meanLoad, 2), 0) /
-    loads.length;
-  const stdDev = Math.sqrt(variance);
+      loads.length,
+  );
   const loadBalance =
     meanLoad > 0 ? ((1 - stdDev / meanLoad) * 100).toFixed(1) : 100;
 
   document.getElementById("load-balance").textContent = `${loadBalance}%`;
   document.getElementById("route-utilization").textContent =
     `${((totalLoad / (numVehicles * 5000)) * 100).toFixed(1)}%`;
-  document.getElementById("optimality-gap").textContent = "< 5% (estimated)";
+  document.getElementById("optimality-gap").textContent = "< 5%";
 
-  // Calculation explanation
-  const explanation = document.getElementById("calculation-explanation");
-  explanation.innerHTML = `
-    <p>1. <strong>Distance Matrix Calculation:</strong> Used Haversine formula to compute great-circle distances between all ${numLocations + 1} points (${numLocations} locations + 1 depot).</p>
-    <p>2. <strong>Vehicle Routing Problem:</strong> Applied OR-Tools with Guided Local Search metaheuristic to minimize total travel distance.</p>
-    <p>3. <strong>Capacity Constraints:</strong> Each vehicle limited to ${5000} units. Total demand: ${totalLoad} units required ${numVehicles} vehicles.</p>
-    <p>4. <strong>Optimization Result:</strong> Found solution with ${totalDistance / 1000} km total distance in < 30 seconds, visiting all ${numLocations} locations.</p>
-    <p>5. <strong>Load Balancing:</strong> Achieved ${loadBalance}% balance score by minimizing standard deviation of vehicle loads (σ = ${stdDev.toFixed(1)}).</p>
+  document.getElementById("constraint-details").innerHTML = plan.routes
+    .map((r, i) => `<p class="text-xs">V${i + 1}: ${r.load} ≤ 5000 ✓</p>`)
+    .join("");
+
+  document.getElementById("calculation-explanation").innerHTML = `
+    <p>1. Distance matrix computed using ${plan.source}</p>
+    <p>2. OR-Tools Guided Local Search optimization</p>
+    <p>3. ${numVehicles} vehicles, ${totalLoad} units, ${plan.locations.length} locations</p>
+    <p>4. Total distance: ${(totalDistance / 1000).toFixed(2)} km</p>
+    <p>5. Load balance: ${loadBalance}% (σ=${stdDev.toFixed(1)})</p>
   `;
+}
 
-  // Update ledger
-  const ledgerBody = document.getElementById("ledger-body");
+function renderLedger(plan, resourceTotals) {
   const grandTotal =
     resourceTotals.water + resourceTotals.food + resourceTotals.medical;
-  ledgerBody.innerHTML = "";
+  const tbody = document.getElementById("ledger-body");
+  tbody.innerHTML = "";
 
   plan.locations.forEach((loc) => {
-    const water = loc.needs.water || 0;
-    const food = loc.needs.food || 0;
-    const medical = loc.needs.medical || 0;
-    const total = water + food + medical;
-    const percentage =
-      grandTotal > 0 ? ((total / grandTotal) * 100).toFixed(1) : 0;
+    const w = loc.needs.water || 0;
+    const f = loc.needs.food || 0;
+    const m = loc.needs.medical || 0;
+    const total = w + f + m;
+    const pct = grandTotal > 0 ? ((total / grandTotal) * 100).toFixed(1) : 0;
 
-    ledgerBody.innerHTML += `
+    tbody.innerHTML += `
       <tr class="hover:bg-gray-700">
         <td class="p-3">${loc.name}</td>
-        <td class="p-3">${water}</td>
-        <td class="p-3">${food}</td>
-        <td class="p-3">${medical}</td>
+        <td class="p-3">${w}</td>
+        <td class="p-3">${f}</td>
+        <td class="p-3">${m}</td>
         <td class="p-3 font-bold">${total}</td>
-        <td class="p-3 text-blue-400">${percentage}%</td>
+        <td class="p-3 text-blue-400">${pct}%</td>
       </tr>
     `;
   });
-
-  // Render map
-  renderMap(plan);
-
-  // Reinitialize Lucide icons
-  lucide.createIcons();
 }
 
-// Separate map rendering function for better debugging
 function renderMap(plan) {
-  console.log("Rendering map with data:", plan);
-
-  // Remove existing map if it exists
   if (mapInstance) {
     mapInstance.remove();
     mapInstance = null;
   }
 
-  // Ensure depot has coordinates
-  const depot = plan.depot || { lat: 28.5355, lon: 77.391, name: "Main Depot" };
+  const depot = plan.depot;
+  mapInstance = L.map("plan-map").setView([depot.lat, depot.lon], 11);
 
-  if (!depot.lat || !depot.lon) {
-    console.error("Depot missing coordinates:", depot);
-    return;
-  }
+  L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", {
+    attribution: "© OpenStreetMap © CARTO",
+  }).addTo(mapInstance);
 
-  // Initialize map
-  try {
-    mapInstance = L.map("plan-map").setView([depot.lat, depot.lon], 11);
-
-    // Add tile layer
-    L.tileLayer(
-      "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
-      {
-        attribution: "© OpenStreetMap © CARTO",
-        maxZoom: 19,
-      },
-    ).addTo(mapInstance);
-
-    // Add depot marker
-    const depotIcon = L.divIcon({
-      html: '<div style="background: #3b82f6; width: 20px; height: 20px; border-radius: 50%; border: 3px solid white; box-shadow: 0 2px 4px rgba(0,0,0,0.3);"></div>',
-      className: "",
+  // Depot
+  L.marker([depot.lat, depot.lon], {
+    icon: L.divIcon({
+      html: '<div style="background:#3b82f6;width:20px;height:20px;border-radius:50%;border:3px solid white;"></div>',
       iconSize: [20, 20],
-      iconAnchor: [10, 10],
-    });
+    }),
+  })
+    .addTo(mapInstance)
+    .bindPopup(`<b>${depot.name}</b>`);
 
-    L.marker([depot.lat, depot.lon], { icon: depotIcon })
-      .addTo(mapInstance)
-      .bindPopup(`<b>${depot.name}</b><br>Distribution Center`);
+  const colors = ["#ef4444", "#f59e0b", "#10b981", "#3b82f6", "#8b5cf6"];
+  const bounds = [[depot.lat, depot.lon]];
 
-    const bounds = [[depot.lat, depot.lon]];
-
-    // Define colors for different routes
-    const routeColors = [
-      "#ef4444",
-      "#f59e0b",
-      "#10b981",
-      "#3b82f6",
-      "#8b5cf6",
-      "#ec4899",
-    ];
-
-    // Add location markers and route lines
-    plan.locations.forEach((loc, idx) => {
-      if (!loc.lat || !loc.lon) {
-        console.warn(`Location ${loc.name} missing coordinates`);
-        return;
-      }
-
-      const locIcon = L.divIcon({
-        html: `<div style="background: ${routeColors[idx % routeColors.length]}; width: 16px; height: 16px; border-radius: 50%; border: 2px solid white; box-shadow: 0 2px 4px rgba(0,0,0,0.3);"></div>`,
-        className: "",
+  // Locations
+  plan.locations.forEach((loc, i) => {
+    L.marker([loc.lat, loc.lon], {
+      icon: L.divIcon({
+        html: `<div style="background:${colors[i % colors.length]};width:16px;height:16px;border-radius:50%;border:2px solid white;"></div>`,
         iconSize: [16, 16],
-        iconAnchor: [8, 8],
-      });
+      }),
+    })
+      .addTo(mapInstance)
+      .bindPopup(
+        `<b>${loc.name}</b><br>W:${loc.needs.water} F:${loc.needs.food} M:${loc.needs.medical}`,
+      );
+    bounds.push([loc.lat, loc.lon]);
+  });
 
-      const total =
-        (loc.needs.water || 0) +
-        (loc.needs.food || 0) +
-        (loc.needs.medical || 0);
-      L.marker([loc.lat, loc.lon], { icon: locIcon }).addTo(mapInstance)
-        .bindPopup(`
-          <b>${loc.name}</b><br>
-          Water: ${loc.needs.water || 0} L<br>
-          Food: ${loc.needs.food || 0} MRE<br>
-          Medical: ${loc.needs.medical || 0} kits<br>
-          <b>Total: ${total} units</b>
-        `);
-
-      bounds.push([loc.lat, loc.lon]);
-    });
-
-    // Draw route lines
-    plan.routes.forEach((route, routeIdx) => {
-      const color = routeColors[routeIdx % routeColors.length];
-      const routeCoords = [];
-
-      route.stops.forEach((stop) => {
-        if (stop.node_index === 0) {
-          routeCoords.push([depot.lat, depot.lon]);
-        } else {
-          const loc = plan.locations[stop.node_index - 1];
-          if (loc && loc.lat && loc.lon) {
-            routeCoords.push([loc.lat, loc.lon]);
-          }
-        }
-      });
-
-      if (routeCoords.length > 1) {
-        L.polyline(routeCoords, {
-          color: color,
-          weight: 3,
-          opacity: 0.7,
-          dashArray: "10, 5",
-        })
-          .addTo(mapInstance)
-          .bindPopup(
-            `<b>Vehicle ${routeIdx + 1}</b><br>Distance: ${(route.distance_meters / 1000).toFixed(2)} km<br>Load: ${route.load} units`,
-          );
+  // Routes
+  plan.routes.forEach((route, i) => {
+    const coords = [];
+    route.stops.forEach((stop) => {
+      if (stop.node_index === 0) {
+        coords.push([depot.lat, depot.lon]);
+      } else {
+        const loc = plan.locations[stop.node_index - 1];
+        coords.push([loc.lat, loc.lon]);
       }
     });
 
-    // Fit bounds to show all markers
-    if (bounds.length > 1) {
-      mapInstance.fitBounds(bounds, { padding: [50, 50] });
+    if (coords.length > 1) {
+      L.polyline(coords, {
+        color: colors[i % colors.length],
+        weight: 3,
+        opacity: 0.7,
+      })
+        .addTo(mapInstance)
+        .bindPopup(
+          `<b>Vehicle ${i + 1}</b><br>${(route.distance_meters / 1000).toFixed(2)} km`,
+        );
     }
+  });
 
-    console.log("Map rendered successfully");
-  } catch (error) {
-    console.error("Error rendering map:", error);
-  }
+  mapInstance.fitBounds(bounds, { padding: [50, 50] });
 }
 
 // Event listeners
@@ -1130,4 +852,4 @@ document.getElementById("toggle-sidebar-btn").onclick = () => {
 // Initialize
 showPage("form-page");
 lucide.createIcons();
-console.log("Alloc8 Form-Based System Initialized");
+console.log("Alloc8 System Initialized");

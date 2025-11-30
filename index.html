@@ -1,4 +1,4 @@
-<!doctype html>
+<! doctype html>
 <html lang="en" class="h-full">
   <head>
     <meta charset="UTF-8" />
@@ -76,7 +76,8 @@
               </h2>
               <p class="text-lg text-gray-400 mb-6">
                 Please fill out the following structured form to provide initial
-                crisis data.
+                crisis data. Additionally, specify the strategy and constraints
+                for the resource allocation plan.
               </p>
 
               <form id="crisis-form" class="space-y-6">
@@ -144,6 +145,65 @@
                       <span>Other</span>
                     </label>
                   </div>
+                </div>
+
+                <!-- Additional Inputs: Strategy and Constraints -->
+                <div class="bg-gray-800 p-6 rounded-lg border border-gray-700">
+                  <label class="block text-lg font-semibold text-white mb-3">
+                    Strategy
+                    <span class="text-red-500">*</span>
+                  </label>
+                  <select
+                    id="strategy"
+                    class="w-full p-3 bg-gray-700 rounded-lg text-white"
+                    required
+                  >
+                    <option value="welfare">Welfare</option>
+                    <option value="need">Need-Based</option>
+                    <option value="fastest">Fastest</option>
+                  </select>
+                </div>
+
+                <div class="bg-gray-800 p-6 rounded-lg border border-gray-700">
+                  <label class="block text-lg font-semibold text-white mb-3">
+                    Maximum Fleet Size
+                    <span class="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="number"
+                    id="max-fleet-size"
+                    class="w-full p-3 bg-gray-700 rounded-lg text-white"
+                    placeholder="Enter maximum number of vehicles"
+                    required
+                  />
+                </div>
+
+                <div class="bg-gray-800 p-6 rounded-lg border border-gray-700">
+                  <label class="block text-lg font-semibold text-white mb-3">
+                    Vehicle Capacity (kg)
+                    <span class="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="number"
+                    id="vehicle-capacity"
+                    class="w-full p-3 bg-gray-700 rounded-lg text-white"
+                    placeholder="Enter vehicle capacity in kilograms"
+                    required
+                  />
+                </div>
+
+                <div class="bg-gray-800 p-6 rounded-lg border border-gray-700">
+                  <label class="block text-lg font-semibold text-white mb-3">
+                    Time Limit (seconds)
+                    <span class="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="number"
+                    id="time-limit"
+                    class="w-full p-3 bg-gray-700 rounded-lg text-white"
+                    placeholder="Enter time limit for optimization"
+                    required
+                  />
                 </div>
 
                 <!-- Question 2: Estimated Scale -->
@@ -456,7 +516,7 @@
                 id="crisis-description"
                 rows="12"
                 class="w-full p-4 bg-gray-800 border border-gray-700 rounded-lg text-gray-200 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                placeholder="e.g., 'The earthquake occurred at 3:42 AM local time. Downtown area has widespread building collapse. Northern residential areas also heavily affected. Main highway bridge (Route 405) is completely down. Unable to confirm airport status - communications are limited. Multiple reports of trapped individuals in collapsed structures...'"
+                placeholder="e.g., 'The earthquake occurred at 3:42 AM local time.  Downtown area has widespread building collapse.  Northern residential areas also heavily affected. Main highway bridge (Route 405) is completely down. Unable to confirm airport status - communications are limited. Multiple reports of trapped individuals in collapsed structures... '"
               ></textarea>
               <button
                 id="start-analysis-btn"
@@ -480,7 +540,7 @@
                   id="chat-loader"
                   class="flex items-center justify-center p-4 gap-2 text-gray-400 hidden"
                 >
-                  <div class="loader !w-5 !h-5"></div>
+                  <div class="loader ! w-5 !h-5"></div>
                   <span id="chat-loader-text">AI is thinking...</span>
                 </div>
                 <div
@@ -502,7 +562,7 @@
               </div>
             </section>
 
-            <!-- ===== 4. Optimization Page ===== -->
+            <!-- ===== 4.  Optimization Page ===== -->
             <section
               id="optimization-page"
               class="page-section hidden space-y-6"
@@ -596,7 +656,6 @@
             </section>
 
             <!-- ===== 6. Plan Page ===== -->
-            <!-- ===== 6. Enhanced Plan Page with Analytics ===== -->
             <section id="plan-page" class="page-section hidden space-y-6">
               <h2 class="text-3xl font-semibold text-white">
                 Generated Distribution Plan - Analytics Dashboard
@@ -686,20 +745,46 @@
                       >
                     </div>
                   </div>
+                  <!-- Vehicle Mode Badges -->
+                  <div
+                    class="mt-4 flex flex-wrap gap-2"
+                    id="vehicle-mode-flags"
+                  ></div>
                 </div>
 
-                <!-- Map Section -->
+                <!-- Map Section with Legend -->
                 <div class="bg-gray-800 p-4 rounded-lg shadow-xl">
                   <h3
                     class="text-xl font-semibold text-white mb-4 flex items-center gap-2"
                   >
                     <i data-lucide="map" class="w-5 h-5"></i>
-                    Distribution Routes Map
+                    Distribution Routes Map (Multimodal)
                   </h3>
                   <div
                     class="h-96 w-full bg-gray-700 rounded-lg shadow-lg overflow-hidden"
                   >
                     <div id="plan-map" class="h-full w-full"></div>
+                  </div>
+                  <!-- Multimodal Legend -->
+                  <div class="flex flex-wrap gap-6 mt-3 text-sm">
+                    <div class="flex items-center gap-2">
+                      <span
+                        class="inline-block w-6 h-1 rounded bg-blue-400"
+                      ></span>
+                      <span class="text-gray-300">Road Transport</span>
+                    </div>
+                    <div class="flex items-center gap-2">
+                      <span
+                        class="inline-block w-6 h-1 rounded bg-green-400"
+                      ></span>
+                      <span class="text-gray-300">Boat Transport</span>
+                    </div>
+                    <div class="flex items-center gap-2">
+                      <span
+                        class="inline-block w-6 h-1 rounded bg-yellow-300"
+                      ></span>
+                      <span class="text-gray-300">Air Transport</span>
+                    </div>
                   </div>
                 </div>
 
@@ -1020,6 +1105,20 @@
                       ></tbody>
                     </table>
                   </div>
+                </div>
+
+                <!-- Vehicle Routes Breakdown -->
+                <div class="bg-gray-800 rounded-lg shadow-xl overflow-hidden">
+                  <h3
+                    class="text-xl font-semibold text-white p-4 border-b border-gray-700 flex items-center gap-2"
+                  >
+                    <i data-lucide="route" class="w-5 h-5"></i>
+                    Vehicle Routes Breakdown (Multimodal)
+                  </h3>
+                  <div
+                    id="vehicle-routes-container"
+                    class="divide-y divide-gray-700"
+                  ></div>
                 </div>
               </div>
             </section>

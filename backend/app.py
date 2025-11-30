@@ -1,10 +1,5 @@
 """
-Alloc8 v4.0: The Real-World Update (OSRM)
------------------------------------------
-✔ Integrated OSRM 'Table' API (Real Travel Times)
-✔ Integrated OSRM 'Route' API (Real Road Geometry)
-✔ Fallback to Vincenty (If OSRM fails or Ocean crossing)
-✔ Preserved: LP Equity, Workload Balancing, Fatigue logic
+Alloc8 v5.0: Multimodal Backend (Road, Air, Sea)
 """
 
 import json
@@ -21,142 +16,167 @@ app = Flask(__name__)
 logging.basicConfig(level=logging.INFO)
 CORS(app)
 
-# ==========================================
-# CONFIG & PHYSICS
-# ==========================================
-
 CONSTANTS = {
-    "osrm_base_url": "http://router.project-osrm.org",  # ⚠️ USE LOCALHOST FOR PRODUCTION
+    "osrm_base_url": "http://router.project-osrm.org",
     "loading_time_per_kg": 2.0,
     "fixed_stop_time": 900,
-    "max_driver_dist_km": 800,  # Roads are longer than straight lines, increased cap
-    "max_shift_time_sec": 43200,
+    "max_driver_dist_km": 5000,  # Increased to allow Air travel
+    "max_shift_time_sec": 86400,  # 24 Hours (allow for long haul)
+    "vehicle_capacity": 5000,
+    # --- Multimodal Physics ---
+    "speed_mps_road": 13.0,  # ~47 km/h avg
+    "speed_mps_boat": 8.5,  # ~30 km/h (Fast Ferry/Boat)
+    "speed_mps_air": 220.0,  # ~800 km/h (Cargo Plane)
+    "air_threshold_km": 600,  # Distance after which we prefer flying
+    "air_docking_time": 3600,  # 1 Hour fixed cost for takeoff/landing
 }
 
-# ==========================================
-# PART 1: OSRM INTERFACE (The Road Network)
-# ==========================================
+# --- Distance Math Helpers ---
 
 
-def get_osrm_matrix(coords):
+def get_haversine_distance(coord1, coord2):
+    """Simple great-circle distance in meters"""
+    R = 6371000  # Earth radius in meters
+    phi1, phi2 = math.radians(coord1[0]), math.radians(coord2[0])
+    dphi = math.radians(coord2[0] - coord1[0])
+    dlambda = math.radians(coord2[1] - coord1[1])
+
+    a = (
+        math.sin(dphi / 2) ** 2
+        + math.cos(phi1) * math.cos(phi2) * math.sin(dlambda / 2) ** 2
+    )
+    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+    return int(R * c)
+
+
+# --- Core Routing Logic ---
+
+
+def get_multimodal_matrix(coords):
     """
-    Fetches the N x N distance and duration matrix from OSRM.
-    coords: List of [lat, lon]
-    Returns: (distance_matrix_meters, duration_matrix_seconds)
+    Builds a matrix that intelligently switches between Road, Boat, and Air
+    based on accessibility and distance.
     """
-    # OSRM requires "lon,lat" format strings joined by semicolon
+    n = len(coords)
     formatted_coords = ";".join([f"{c[1]},{c[0]}" for c in coords])
-
     url = f"{CONSTANTS['osrm_base_url']}/table/v1/driving/{formatted_coords}"
-    params = {"annotations": "distance,duration"}
+    params = {"annotations": "distance,duration", "skip_waypoints": "false"}
+
+    dist_matrix = [[0] * n for _ in range(n)]
+    time_matrix = [[0] * n for _ in range(n)]
+    mode_matrix = [["road"] * n for _ in range(n)]  # Track which mode is used per leg
 
     try:
+        # 1. Try OSRM first for everything
         resp = requests.get(url, params=params, timeout=10)
         data = resp.json()
 
         if data["code"] != "Ok":
-            raise Exception(f"OSRM Error: {data['code']}")
+            raise Exception("OSRM Error")
 
-        # OSRM returns data[source][destination]
-        # We assume result is clean float/int.
-        dist_matrix = data["distances"]  # Meters
-        time_matrix = data["durations"]  # Seconds
+        raw_dists = data["distances"]
+        raw_times = data["durations"]
 
-        return dist_matrix, time_matrix
+        for i in range(n):
+            for j in range(n):
+                if i == j:
+                    continue
+
+                # Calculate Great Circle Distance (Crow flies)
+                geo_dist = get_haversine_distance(coords[i], coords[j])
+
+                # --- LOGIC 1: AIR TRAVEL ---
+                # If distance is huge, force Air Mode
+                if geo_dist > (CONSTANTS["air_threshold_km"] * 1000):
+                    dist_matrix[i][j] = geo_dist
+                    # Time = Distance / Speed + Fixed Takeoff/Landing Time
+                    time_matrix[i][j] = int(
+                        (geo_dist / CONSTANTS["speed_mps_air"])
+                        + CONSTANTS["air_docking_time"]
+                    )
+                    mode_matrix[i][j] = "air"
+                    continue
+
+                # --- LOGIC 2: ROAD vs BOAT ---
+                osrm_dist = raw_dists[i][j]
+                osrm_time = raw_times[i][j]
+
+                if osrm_dist is None:
+                    # OSRM failed -> Road Blocked/Ocean -> USE BOAT
+                    dist_matrix[i][j] = geo_dist
+                    # Boat is slower than road, but direct
+                    time_matrix[i][j] = int(geo_dist / CONSTANTS["speed_mps_boat"])
+                    mode_matrix[i][j] = "boat"
+                else:
+                    # Road exists
+                    # Heuristic: If Road route is > 3x the crow-flies distance,
+                    # it implies a massive detour around water. Take the boat instead.
+                    if osrm_dist > (geo_dist * 3.0):
+                        dist_matrix[i][j] = geo_dist
+                        time_matrix[i][j] = int(geo_dist / CONSTANTS["speed_mps_boat"])
+                        mode_matrix[i][j] = "boat"
+                    else:
+                        # Standard Road
+                        dist_matrix[i][j] = int(osrm_dist)
+                        time_matrix[i][j] = int(osrm_time)
+                        mode_matrix[i][j] = "road"
 
     except Exception as e:
-        logging.error(f"OSRM Matrix Failed: {e}. Falling back to Math.")
-        return None, None
-
-
-def get_osrm_route_geometry(sequence_coords):
-    """
-    Fetches the actual polyline (wiggly road path) for the result map.
-    sequence_coords: Ordered list of [lat, lon] visited by the truck
-    """
-    if len(sequence_coords) < 2:
-        return []
-
-    formatted_coords = ";".join([f"{c[1]},{c[0]}" for c in sequence_coords])
-    url = f"{CONSTANTS['osrm_base_url']}/route/v1/driving/{formatted_coords}"
-    params = {"overview": "full", "geometries": "geojson"}
-
-    try:
-        resp = requests.get(url, params=params, timeout=5)
-        data = resp.json()
-        if data["code"] == "Ok":
-            # Extract coordinates from the first route option
-            return data["routes"][0]["geometry"]["coordinates"]
-            # Note: GeoJSON is [lon, lat], frontend might need swap
-    except:
-        return []  # Fail silently, UI will just draw straight lines
-
-
-# ==========================================
-# PART 2: MATH FALLBACK (Vincenty)
-# ==========================================
-
-
-def get_vincenty_distance(coord1, coord2):
-    """Ellipsoidal distance fallback if OSRM is down/unreachable"""
-    a, f = 6378137.0, 1 / 298.257223563
-    b = (1 - f) * a
-    phi1, L1 = math.radians(coord1[0]), math.radians(coord1[1])
-    phi2, L2 = math.radians(coord2[0]), math.radians(coord2[1])
-    U1, U2 = math.atan((1 - f) * math.tan(phi1)), math.atan((1 - f) * math.tan(phi2))
-    L = L2 - L1
-    sinU1, cosU1 = math.sin(U1), math.cos(U1)
-    sinU2, cosU2 = math.sin(U2), math.cos(U2)
-    lam = L
-    for _ in range(100):
-        sinLam, cosLam = math.sin(lam), math.cos(lam)
-        sinSigma = math.sqrt(
-            (cosU2 * sinLam) ** 2 + (cosU1 * sinU2 - sinU1 * cosU2 * cosLam) ** 2
+        logging.warning(
+            f"OSRM/Matrix Error ({e}). Falling back to pure physics calculation."
         )
-        if sinSigma == 0:
-            return 0
-        cosSigma = sinU1 * sinU2 + cosU1 * cosU2 * cosLam
-        sigma = math.atan2(sinSigma, cosSigma)
-        sinAlpha = cosU1 * cosU2 * sinLam / sinSigma
-        cosSqAlpha = 1 - sinAlpha**2
+        # Fallback: Everything is calculated via physics
+        for i in range(n):
+            for j in range(n):
+                if i == j:
+                    continue
+                d_m = get_haversine_distance(coords[i], coords[j])
+                dist_matrix[i][j] = int(d_m)
+
+                if d_m > (CONSTANTS["air_threshold_km"] * 1000):
+                    time_matrix[i][j] = int(
+                        (d_m / CONSTANTS["speed_mps_air"])
+                        + CONSTANTS["air_docking_time"]
+                    )
+                    mode_matrix[i][j] = "air"
+                else:
+                    # Assume generic road/boat blend
+                    time_matrix[i][j] = int(d_m / CONSTANTS["speed_mps_road"])
+                    mode_matrix[i][j] = "road"
+
+    return dist_matrix, time_matrix, mode_matrix
+
+
+def get_leg_geometry(coord_start, coord_end, mode):
+    """
+    Returns geometry.
+    Road = Follows streets (OSRM).
+    Air/Boat = Straight line (Geodesic).
+    """
+    if mode == "road":
+        # Fetch OSRM geometry
+        formatted_coords = (
+            f"{coord_start[1]},{coord_start[0]};{coord_end[1]},{coord_end[0]}"
+        )
+        url = f"{CONSTANTS['osrm_base_url']}/route/v1/driving/{formatted_coords}"
+        params = {"overview": "full", "geometries": "geojson"}
         try:
-            cos2SigmaM = cosSigma - 2 * sinU1 * sinU2 / cosSqAlpha
+            resp = requests.get(url, params=params, timeout=5)
+            data = resp.json()
+            if data["code"] == "Ok":
+                return data["routes"][0]["geometry"]["coordinates"]
         except:
-            cos2SigmaM = 0
-        C = f / 16 * cosSqAlpha * (4 + f * (4 - 3 * cosSqAlpha))
-        lam_prev = lam
-        lam = L + (1 - C) * f * sinAlpha * (
-            sigma
-            + C * sinSigma * (cos2SigmaM + C * cosSigma * (-1 + 2 * cos2SigmaM**2))
-        )
-        if abs(lam - lam_prev) < 1e-12:
-            break
-    uSq = cosSqAlpha * (a**2 - b**2) / b**2
-    A = 1 + uSq / 16384 * (4096 + uSq * (-768 + uSq * (320 - 175 * uSq)))
-    B = uSq / 1024 * (256 + uSq * (-128 + uSq * (74 - 47 * uSq)))
-    deltaSigma = (
-        B
-        * sinSigma
-        * (
-            cos2SigmaM
-            + B
-            / 4
-            * (
-                cosSigma * (-1 + 2 * cos2SigmaM**2)
-                - B / 6 * cos2SigmaM * (-3 + 4 * sinSigma**2) * (-3 + 4 * cos2SigmaM**2)
-            )
-        )
-    )
-    return b * A * (sigma - deltaSigma)
+            pass
+
+    # Fallback for Air/Boat or failed OSRM: Straight Line
+    return [[coord_start[1], coord_start[0]], [coord_end[1], coord_end[0]]]
 
 
-# ==========================================
-# PART 3: ALLOCATION LOGIC (LP)
-# ==========================================
+# --- Optimization Helpers ---
 
 
 def solve_allocation_lp(demands, fleet_cap, priorities):
-    """LP Logic maintained from V3.0 (Equity constraints)"""
+    """LP allocation with equity constraints"""
     n = len(demands)
     if n == 0 or sum(demands) <= fleet_cap:
         return demands
@@ -169,9 +189,8 @@ def solve_allocation_lp(demands, fleet_cap, priorities):
         if d == 0:
             bounds.append((0, 0))
         else:
-            bounds.append((int(d * 0.20), int(d)))  # 20% equity floor
+            bounds.append((int(d * 0.20), int(d)))
 
-    # Safety check for feasibility
     if sum(b[0] for b in bounds) > fleet_cap:
         return [int(d * (fleet_cap / sum(demands))) for d in demands]
 
@@ -179,196 +198,262 @@ def solve_allocation_lp(demands, fleet_cap, priorities):
     return [int(x) for x in res.x] if res.success else demands
 
 
-# ==========================================
-# PART 4: MAIN OPTIMIZER
-# ==========================================
+# --- API Endpoints ---
 
 
-def run_optimization(data):
-    # 1. Setup
-    depot = data.get("depot", {"lat": 20.2444, "lon": 85.8172, "name": "Base"})
-    locations = data.get("parsedNeeds", {}).get("locations", [])
-    blocked_zones = data.get("blocked_zones", [])
+@app.route("/generate-plan", methods=["POST"])
+def generate_plan():
+    try:
+        data = request.get_json(force=True)
 
-    # 2. Physics & Needs
-    raw_demands, priorities = [], []
-    for loc in locations:
-        needs = loc.get("needs", {})
-        total_req = sum(int(v) for v in needs.values())
-        p_score = (
-            (int(needs.get("medical", 0)) * 10) + (int(needs.get("water", 0)) * 3) + 1
+        # 1. Parsing Input
+        strategy = data.get("strategy", "welfare")
+        parsed_needs = data.get("parsedNeeds", {})
+        locations = parsed_needs.get("locations", [])
+
+        if not locations:
+            return jsonify({"error": "No locations provided"}), 400
+
+        # Depot setup
+        depot_data = data.get("depot", {})
+        if depot_data and "lat" in depot_data:
+            depot = depot_data
+        else:
+            depot = {
+                "lat": locations[0]["lat"] if locations else 28.5355,
+                "lon": locations[0]["lon"] if locations else 77.391,
+                "name": "Main Distribution Center",
+            }
+
+        # 2. Demand Calculation
+        raw_demands, priorities = [], []
+        for loc in locations:
+            needs = loc.get("needs", {})
+            total_req = sum(int(v) for v in needs.values())
+
+            if strategy == "need":
+                p_score = (
+                    (int(needs.get("medical", 0)) * 10)
+                    + (int(needs.get("water", 0)) * 3)
+                    + int(needs.get("food", 0))
+                )
+            elif strategy == "fastest":
+                p_score = 5
+            else:
+                p_score = total_req
+
+            raw_demands.append(total_req)
+            priorities.append(p_score)
+
+        # 3. Dynamic Fleet Sizing
+        vehicle_capacity = int(
+            data.get("vehicle_capacity", CONSTANTS["vehicle_capacity"])
         )
-        raw_demands.append(total_req)
-        priorities.append(p_score)
 
-    # 3. LP Allocation
-    fleet_cap_total = data.get("max_fleet_size", 3) * data.get("vehicle_capacity", 5000)
-    allocated_amounts = solve_allocation_lp(raw_demands, fleet_cap_total, priorities)
-    demands = [0] + allocated_amounts  # Prepend Depot
+        # STEP 2: Calculate Demand
+        total_demand = sum(raw_demands)
 
-    # 4. Matrix Generation (OSRM vs Fallback)
-    coords = [[depot["lat"], depot["lon"]]] + [
-        [loc["lat"], loc["lon"]] for loc in locations
-    ]
-    n = len(coords)
+        # STEP 3: Now you can safely use vehicle_capacity in the math
+        if vehicle_capacity > 0:
+            estimated_trucks_needed = math.ceil(total_demand / vehicle_capacity)
+        else:
+            estimated_trucks_needed = 1
 
-    # Try OSRM
-    dist_matrix, time_matrix = get_osrm_matrix(coords)
+            # STEP 4: Set Fleet Limits
+            # Cap at 200 to prevent server timeout, but allow growth
+        max_fleet_limit = 200
 
-    # If OSRM failed or returned None, use Vincenty Fallback
-    if dist_matrix is None:
-        logging.info("Using Vincenty Fallback Matrix")
-        dist_matrix = [[0] * n for _ in range(n)]
-        time_matrix = [[0] * n for _ in range(n)]
-        avg_speed_mps = 13.0
+        # Check if frontend sent a limit, otherwise calculate it
+        requested_max = data.get("max_fleet_size")
+
+        if requested_max:
+            max_fleet_size = int(requested_max)
+        else:
+            # Default to needed trucks + buffer, capped at 200
+            max_fleet_size = min(estimated_trucks_needed + 5, max_fleet_limit)
+
+            # Ensure we have at least 3 trucks, but don't exceed max_fleet_size
+        num_vehicles = min(max(estimated_trucks_needed, 3), max_fleet_size)
+
+        # 4. Allocation (LP)
+        fleet_cap_total = num_vehicles * vehicle_capacity
+        allocated_amounts = solve_allocation_lp(
+            raw_demands, fleet_cap_total, priorities
+        )
+        demands = [0] + allocated_amounts
+
+        # 5. Multimodal Matrix Generation
+        coords = [[depot["lat"], depot["lon"]]] + [
+            [loc["lat"], loc["lon"]] for loc in locations
+        ]
+        n = len(coords)
+
+        # Get Distances, Times, AND MODES
+        dist_matrix, time_matrix, mode_matrix = get_multimodal_matrix(coords)
+
+        # 6. OR-Tools Setup
+        if strategy == "fastest":
+            priorities = [
+                1000000 / (dist_matrix[0][i + 1] + 1) for i in range(len(locations))
+            ]
+
+        service_times = [0] * n
+        for i in range(1, n):
+            service_times[i] = int(
+                CONSTANTS["fixed_stop_time"]
+                + (allocated_amounts[i - 1] * CONSTANTS["loading_time_per_kg"])
+            )
+
+        final_time_matrix = [[0] * n for _ in range(n)]
         for i in range(n):
             for j in range(n):
                 if i == j:
                     continue
-                d_m = get_vincenty_distance(coords[i], coords[j])
-                dist_matrix[i][j] = d_m
-                time_matrix[i][j] = d_m / avg_speed_mps
+                final_time_matrix[i][j] = int(time_matrix[i][j] + service_times[j])
 
-    # 5. Apply Modifiers (Service Time & Risk)
-    # Even with OSRM, we must add loading time and risk penalties manually
-    service_times = [0] * n
-    for i in range(1, n):
-        service_times[i] = int(
-            CONSTANTS["fixed_stop_time"]
-            + (allocated_amounts[i - 1] * CONSTANTS["loading_time_per_kg"])
+        manager = pywrapcp.RoutingIndexManager(n, num_vehicles, 0)
+        routing = pywrapcp.RoutingModel(manager)
+
+        def time_cb(from_idx, to_idx):
+            return final_time_matrix[manager.IndexToNode(from_idx)][
+                manager.IndexToNode(to_idx)
+            ]
+
+        transit_idx = routing.RegisterTransitCallback(time_cb)
+        routing.SetArcCostEvaluatorOfAllVehicles(transit_idx)
+
+        routing.AddDimension(
+            transit_idx,
+            3600 * 4,  # Slack
+            CONSTANTS["max_shift_time_sec"] * 3,  # Allow long durations for multimodal
+            True,
+            "Time",
         )
 
-    final_time_matrix = [[0] * n for _ in range(n)]
-    final_dist_matrix = [[int(x) for x in row] for row in dist_matrix]  # Ensure ints
+        def dist_cb(from_idx, to_idx):
+            return dist_matrix[manager.IndexToNode(from_idx)][
+                manager.IndexToNode(to_idx)
+            ]
 
-    for i in range(n):
-        for j in range(n):
-            if i == j:
-                continue
+        dist_idx = routing.RegisterTransitCallback(dist_cb)
+        routing.AddDimension(
+            dist_idx, 0, 50000000, True, "Distance"
+        )  # Very high max distance for air
 
-            # Risk check (still using geometric check against blocked zones)
-            # In a pro version, you'd check if the OSRM *path* intersects the zone
-            risk_mult = 1.0
-            for zone in blocked_zones:
-                if (
-                    get_vincenty_distance(coords[j], [zone["lat"], zone["lon"]])
-                    < zone["radius"]
-                ):
-                    risk_mult = 1000.0  # Virtual blockade
+        def demand_cb(from_idx):
+            return demands[manager.IndexToNode(from_idx)]
 
-            raw_time = time_matrix[i][j]
-            final_time_matrix[i][j] = int((raw_time * risk_mult) + service_times[j])
+        demand_idx = routing.RegisterUnaryTransitCallback(demand_cb)
+        routing.AddDimensionWithVehicleCapacity(
+            demand_idx, 0, [vehicle_capacity] * num_vehicles, True, "Capacity"
+        )
 
-    # 6. OR-Tools Routing
-    manager = pywrapcp.RoutingIndexManager(n, data.get("max_fleet_size", 3), 0)
-    routing = pywrapcp.RoutingModel(manager)
+        search_params = pywrapcp.DefaultRoutingSearchParameters()
+        search_params.first_solution_strategy = (
+            routing_enums_pb2.FirstSolutionStrategy.PATH_CHEAPEST_ARC
+        )
+        search_params.local_search_metaheuristic = (
+            routing_enums_pb2.LocalSearchMetaheuristic.GUIDED_LOCAL_SEARCH
+        )
+        search_params.time_limit.seconds = int(data.get("time_limit_seconds", 15))
 
-    # Dimensions
-    def time_cb(from_idx, to_idx):
-        return final_time_matrix[manager.IndexToNode(from_idx)][
-            manager.IndexToNode(to_idx)
-        ]
+        penalty = 1000000
+        for i in range(1, n):
+            routing.AddDisjunction([manager.NodeToIndex(i)], penalty)
 
-    transit_idx = routing.RegisterTransitCallback(time_cb)
-    routing.SetArcCostEvaluatorOfAllVehicles(transit_idx)
+        solution = routing.SolveWithParameters(search_params)
 
-    routing.AddDimension(
-        transit_idx, 3600, CONSTANTS["max_shift_time_sec"], True, "Time"
-    )
-    time_dim = routing.GetDimensionOrDie("Time")
-    time_dim.SetGlobalSpanCostCoefficient(5000)  # Fairness
+        if not solution:
+            return jsonify({"error": "Unable to calculate a valid plan."}), 500
 
-    def dist_cb(from_idx, to_idx):
-        return final_dist_matrix[manager.IndexToNode(from_idx)][
-            manager.IndexToNode(to_idx)
-        ]
+        # 7. Formatting Output
+        routes = []
+        total_distance = 0
+        total_resources = sum(allocated_amounts)
 
-    dist_idx = routing.RegisterTransitCallback(dist_cb)
-    routing.AddDimension(
-        dist_idx, 0, CONSTANTS["max_driver_dist_km"] * 1000, True, "Distance"
-    )
+        for v_id in range(num_vehicles):
+            index = routing.Start(v_id)
+            stops = []
+            route_segments = []  # New structure to hold geometry + mode per leg
+            route_dist = 0
+            route_load = 0
 
-    def demand_cb(from_idx):
-        return demands[manager.IndexToNode(from_idx)]
+            while not routing.IsEnd(index):
+                node = manager.IndexToNode(index)
+                next_index = solution.Value(routing.NextVar(index))
+                next_node = manager.IndexToNode(next_index)
 
-    demand_idx = routing.RegisterUnaryTransitCallback(demand_cb)
-    routing.AddDimensionWithVehicleCapacity(
-        demand_idx,
-        0,
-        [data.get("vehicle_capacity", 5000)] * data.get("max_fleet_size", 3),
-        True,
-        "Capacity",
-    )
+                # Get Mode for this specific leg
+                travel_mode = mode_matrix[node][next_node]
 
-    # Solve
-    search_params = pywrapcp.DefaultRoutingSearchParameters()
-    search_params.first_solution_strategy = (
-        routing_enums_pb2.FirstSolutionStrategy.PATH_CHEAPEST_ARC
-    )
-    search_params.local_search_metaheuristic = (
-        routing_enums_pb2.LocalSearchMetaheuristic.GUIDED_LOCAL_SEARCH
-    )
-    search_params.time_limit.seconds = 10  # Faster for road lookup
-    solution = routing.SolveWithParameters(search_params)
+                # Fetch Geometry (Road or Line)
+                geometry = get_leg_geometry(
+                    coords[node], coords[next_node], travel_mode
+                )
 
-    # 7. Formatting & Geometry Fetching
-    if not solution:
-        return {"error": "No solution found"}
-
-    routes = []
-    for v_id in range(data.get("max_fleet_size", 3)):
-        index = routing.Start(v_id)
-        route = {"vehicle_id": v_id, "stops": [], "geometry_geojson": []}
-
-        # Track path for Geometry fetch
-        path_coords = []
-
-        while not routing.IsEnd(index):
-            node = manager.IndexToNode(index)
-            path_coords.append(coords[node])
-
-            if node != 0:
-                route["stops"].append(
+                route_segments.append(
                     {
-                        "name": locations[node - 1]["name"],
-                        "load": demands[node],
-                        "eta": solution.Min(time_dim.CumulVar(index)),
+                        "from_node": node,
+                        "to_node": next_node,
+                        "mode": travel_mode,
+                        "geometry": geometry,
+                        "distance_leg": dist_matrix[node][next_node],
                     }
                 )
-            index = solution.Value(routing.NextVar(index))
 
-        # Add return to depot
-        path_coords.append(coords[manager.IndexToNode(index)])
+                if node != 0:
+                    stops.append(
+                        {
+                            "node_index": node,
+                            "name": locations[node - 1]["name"],
+                            "lat": locations[node - 1]["lat"],
+                            "lon": locations[node - 1]["lon"],
+                            "load": demands[node],
+                            "needs": locations[node - 1]["needs"],
+                        }
+                    )
+                    route_load += demands[node]
 
-        # FETCH REAL ROAD GEOMETRY
-        # If we have OSRM, we ask for the detailed path between these points
-        if dist_matrix is not None:
-            # Note: OSRM Route service works best with fewer points.
-            # If path_coords is huge, you might just want straight lines or chunk it.
-            route["geometry_geojson"] = get_osrm_route_geometry(path_coords)
-        else:
-            # Fallback: Straight lines
-            route["geometry_geojson"] = [
-                [c[1], c[0]] for c in path_coords
-            ]  # GeoJSON is Lon,Lat
+                route_dist += routing.GetArcCostForVehicle(index, next_index, v_id)
+                index = next_index
 
-        if len(route["stops"]) > 0:
-            routes.append(route)
+            if len(stops) > 0:
+                # Determine primary vehicle type based on majority mode
+                mode_counts = {"road": 0, "boat": 0, "air": 0}
+                for seg in route_segments:
+                    mode_counts[seg["mode"]] += 1
+                primary_mode = max(mode_counts, key=mode_counts.get)
 
-    return {
-        "status": "success",
-        "source": "OSRM (Real Roads)" if dist_matrix else "Vincenty (Math)",
-        "routes": routes,
-    }
+                routes.append(
+                    {
+                        "vehicle_id": v_id,
+                        "vehicle_type": primary_mode,  # e.g., "road", "air", "boat"
+                        "stops": stops,
+                        "segments": route_segments,  # Detailed geometry with mode
+                        "distance_meters": route_dist,
+                        "load": route_load,
+                    }
+                )
+                total_distance += route_dist
 
+        return jsonify(
+            {
+                "status": "success",
+                "depot": depot,
+                "locations": locations,
+                "routes": routes,
+                "summary": {
+                    "title": f"{strategy.capitalize()} Multimodal Plan",
+                    "description": f"Optimized using {len(routes)} vehicles (Road/Sea/Air).",
+                    "totalDistanceMeters": total_distance,
+                    "totalResources": sum(raw_demands),
+                    "assignedResources": total_resources,
+                },
+            }
+        )
 
-@app.route("/optimize", methods=["POST"])
-def optimize():
-    try:
-        data = request.get_json(force=True)
-        return jsonify(run_optimization(data))
     except Exception as e:
-        logging.exception("Error")
+        logging.exception("Critical Error")
         return jsonify({"error": str(e)}), 500
 
 
