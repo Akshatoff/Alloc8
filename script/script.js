@@ -7,7 +7,7 @@ let collectedData = {};
 let generatedPlan = null;
 let mapInstance = null;
 
-const apiKey = "AIzaSyAqDcVDj60Ghg98B19OwFg8HfDy1_BWQZE";
+const apiKey = "";
 const BACKEND_URL = "http://127.0.0.1:5000";
 
 // Utility functions
@@ -442,6 +442,8 @@ Format:
   }
 }
 
+
+
 // Strategy selection
 function showConfirmationPage(strategy) {
   collectedData.strategy = strategy;
@@ -518,33 +520,64 @@ async function generateFinalPlan() {
 function renderPlan(plan) {
   console.log("Rendering plan:", plan);
 
-  // Update summary
-  document.getElementById("plan-title").textContent = plan.summary.title;
+  // Update summary with proper field access
+  document.getElementById("plan-title").textContent =
+    plan.summary.title || "Distribution Plan";
   document.getElementById("plan-description").textContent =
-    plan.summary.description;
-  document.getElementById("stat-strategy").textContent = plan.summary.strategy;
+    plan.summary.description || "";
+  document.getElementById("stat-strategy").textContent =
+    plan.summary.strategy || "N/A";
   document.getElementById("stat-distance").textContent =
     `${Math.round(plan.summary.totalDistanceMeters / 1000)} km`;
   document.getElementById("stat-resources").textContent =
-    `${plan.summary.totalResources} units`;
+    `${plan.summary.assignedResources || 0} units`;
   document.getElementById("stat-vehicles").textContent =
-    `${plan.summary.totalTrucks} Trucks`;
+    `${plan.summary.totalTrucks || plan.routes.length} Trucks`;
+
+  // Add vehicle mode badges
+  const modesUsed = new Set();
+  plan.routes.forEach((route) => {
+    route.segments.forEach((seg) => modesUsed.add(seg.mode));
+  });
+
+  const modeFlags = document.getElementById("vehicle-mode-flags");
+  modeFlags.innerHTML = "";
+
+  const modeIcons = {
+    road: "🚚",
+    boat: "⛴️",
+    air: "✈️",
+  };
+
+  modesUsed.forEach((mode) => {
+    const badge = document.createElement("span");
+    badge.className = "px-3 py-1 rounded-full text-sm font-semibold";
+    badge.style.background =
+      mode === "air" ? "#fbbf24" : mode === "boat" ? "#10b981" : "#3b82f6";
+    badge.textContent = `${modeIcons[mode]} ${mode.toUpperCase()}`;
+    modeFlags.appendChild(badge);
+  });
 
   // Calculate metrics
   const totalDistance = plan.summary.totalDistanceMeters;
   const totalLoad = plan.summary.assignedResources;
   const numVehicles = plan.routes.length;
+  const vehicleCapacity = 20000; // From your settings
+
   const avgLoad = numVehicles > 0 ? Math.round(totalLoad / numVehicles) : 0;
   const avgDistance =
     numVehicles > 0 ? Math.round(totalDistance / numVehicles / 1000) : 0;
-  const efficiency = avgLoad > 0 ? Math.round((avgLoad / 5000) * 100) : 0;
+  const efficiency =
+    avgLoad > 0 && vehicleCapacity > 0
+      ? Math.round((avgLoad / vehicleCapacity) * 100)
+      : 0;
 
   document.getElementById("avg-load").textContent = `${avgLoad} units`;
   document.getElementById("avg-load-bar").style.width =
     `${Math.min(100, efficiency)}%`;
   document.getElementById("avg-distance").textContent = `${avgDistance} km`;
   document.getElementById("avg-distance-bar").style.width =
-    `${Math.min(100, (avgDistance / 100) * 100)}%`;
+    `${Math.min(100, (avgDistance / 500) * 100)}%`;
   document.getElementById("efficiency-percent").textContent = `${efficiency}%`;
   document.getElementById("efficiency-bar").style.width = `${efficiency}%`;
   document.getElementById("cost-per-km").textContent =
@@ -558,19 +591,58 @@ function renderPlan(plan) {
     resourceTotals.medical += loc.needs.medical || 0;
   });
 
-  // Charts
+  // Render all visualizations
   renderCharts(plan, resourceTotals);
-
-  // Math analysis
   renderMathAnalysis(plan, totalDistance, totalLoad, numVehicles);
-
-  // Ledger
   renderLedger(plan, resourceTotals);
-
-  // Map
+  renderVehicleRoutes(plan); // Add this function below
   renderMap(plan);
 
   lucide.createIcons();
+}
+
+function renderVehicleRoutes(plan) {
+  const container = document.getElementById("vehicle-routes-container");
+  container.innerHTML = "";
+
+  const modeColors = {
+    road: "#3b82f6",
+    boat: "#10b981",
+    air: "#fbbf24"
+  };
+
+  plan.routes.forEach((route, idx) => {
+    const routeEl = document.createElement("div");
+    routeEl.className = "p-4 hover:bg-gray-700/50 transition";
+
+    let stopsHTML = route.stops.map(stop =>
+      `<div class="text-sm text-gray-400">📍 ${stop.name} (${stop.load} units)</div>`
+    ).join("");
+
+    let segmentsHTML = route.segments.map(seg =>
+      `<span class="inline-block px-2 py-1 rounded text-xs font-mono" style="background:${modeColors[seg.mode]};">
+        ${seg.mode.toUpperCase()}: ${(seg.distance_leg / 1000).toFixed(1)}km
+      </span>`
+    ).join(" ");
+
+    routeEl.innerHTML = `
+      <div class="flex justify-between items-start mb-2">
+        <h4 class="text-lg font-semibold text-white">Vehicle ${idx + 1} - ${route.vehicle_type.toUpperCase()}</h4>
+        <span class="text-blue-400 font-mono">${(route.distance_meters / 1000).toFixed(2)} km</span>
+      </div>
+      <div class="mb-2">
+        <span class="text-gray-400">Load:</span> <span class="text-white font-semibold">${route.load} units</span>
+      </div>
+      <div class="mb-2 flex flex-wrap gap-1">
+        ${segmentsHTML}
+      </div>
+      <div class="mt-2 space-y-1">
+        ${stopsHTML}
+      </div>
+    `;
+
+    container.appendChild(routeEl);
+  });
 }
 
 function renderCharts(plan, resourceTotals) {
@@ -743,60 +815,97 @@ function renderMap(plan) {
     attribution: "© OpenStreetMap © CARTO",
   }).addTo(mapInstance);
 
-  // Depot
+  // Depot marker
   L.marker([depot.lat, depot.lon], {
     icon: L.divIcon({
-      html: '<div style="background:#3b82f6;width:20px;height:20px;border-radius:50%;border:3px solid white;"></div>',
-      iconSize: [20, 20],
+      html: '<div style="background:#3b82f6;width:24px;height:24px;border-radius:50%;border:3px solid white;box-shadow:0 0 10px rgba(59,130,246,0.8);"></div>',
+      iconSize: [24, 24],
+      className: "depot-marker",
     }),
   })
     .addTo(mapInstance)
-    .bindPopup(`<b>${depot.name}</b>`);
+    .bindPopup(
+      `<b>🏢 ${depot.name}</b><br><span style="color:#3b82f6;">Distribution Center</span>`,
+    );
 
-  const colors = ["#ef4444", "#f59e0b", "#10b981", "#3b82f6", "#8b5cf6"];
+  const colors = [
+    "#ef4444",
+    "#f59e0b",
+    "#10b981",
+    "#3b82f6",
+    "#8b5cf6",
+    "#ec4899",
+    "#14b8a6",
+  ];
   const bounds = [[depot.lat, depot.lon]];
 
-  // Locations
+  // Location markers
   plan.locations.forEach((loc, i) => {
+    const color = colors[i % colors.length];
     L.marker([loc.lat, loc.lon], {
       icon: L.divIcon({
-        html: `<div style="background:${colors[i % colors.length]};width:16px;height:16px;border-radius:50%;border:2px solid white;"></div>`,
-        iconSize: [16, 16],
+        html: `<div style="background:${color};width:18px;height:18px;border-radius:50%;border:2px solid white;box-shadow:0 0 8px ${color};"></div>`,
+        iconSize: [18, 18],
       }),
     })
       .addTo(mapInstance)
       .bindPopup(
-        `<b>${loc.name}</b><br>W:${loc.needs.water} F:${loc.needs.food} M:${loc.needs.medical}`,
+        `<b>${loc.name}</b><br>
+         <span style="color:#60a5fa;">💧 Water: ${loc.needs.water}</span><br>
+         <span style="color:#34d399;">🍎 Food: ${loc.needs.food}</span><br>
+         <span style="color:#fbbf24;">⚕️ Medical: ${loc.needs.medical}</span>`,
       );
     bounds.push([loc.lat, loc.lon]);
   });
 
-  // Routes
-  plan.routes.forEach((route, i) => {
-    const coords = [];
-    route.stops.forEach((stop) => {
-      if (stop.node_index === 0) {
-        coords.push([depot.lat, depot.lon]);
-      } else {
-        const loc = plan.locations[stop.node_index - 1];
-        coords.push([loc.lat, loc.lon]);
-      }
-    });
+  // Route rendering with SEGMENTS
+  plan.routes.forEach((route, routeIdx) => {
+    const color = colors[routeIdx % colors.length];
 
-    if (coords.length > 1) {
-      L.polyline(coords, {
-        color: colors[i % colors.length],
-        weight: 3,
-        opacity: 0.7,
-      })
+    // Render each segment with its specific geometry and mode
+    route.segments.forEach((seg) => {
+      const coords = seg.geometry.map(([lon, lat]) => [lat, lon]); // Convert [lon,lat] to [lat,lon]
+
+      // Determine line style based on mode
+      let lineStyle = {
+        color: color,
+        weight: 4,
+        opacity: 0.8,
+        smoothFactor: 1,
+      };
+
+      if (seg.mode === "air") {
+        lineStyle.dashArray = "10, 10"; // Dashed for air
+        lineStyle.color = "#fbbf24"; // Yellow for air
+      } else if (seg.mode === "boat") {
+        lineStyle.dashArray = "5, 5"; // Short dash for boat
+        lineStyle.color = "#10b981"; // Green for boat
+      }
+
+      L.polyline(coords, lineStyle)
         .addTo(mapInstance)
         .bindPopup(
-          `<b>Vehicle ${i + 1}</b><br>${(route.distance_meters / 1000).toFixed(2)} km`,
+          `<b>🚚 Vehicle ${routeIdx + 1}</b><br>
+           Mode: ${seg.mode.toUpperCase()}<br>
+           Distance: ${(seg.distance_leg / 1000).toFixed(2)} km`,
         );
-    }
+    });
+
+    // Add vehicle route info
+    const totalDistance = (route.distance_meters / 1000).toFixed(2);
+    const routeLabel = L.marker([depot.lat, depot.lon], {
+      icon: L.divIcon({
+        html: `<div style="background:${color};color:white;padding:4px 8px;border-radius:4px;font-weight:bold;font-size:11px;white-space:nowrap;">V${routeIdx + 1}: ${totalDistance}km</div>`,
+        iconSize: [80, 20],
+        className: "route-label",
+      }),
+    }).addTo(mapInstance);
   });
 
-  mapInstance.fitBounds(bounds, { padding: [50, 50] });
+  // Fit bounds with padding
+  if (bounds.length > 0) {
+    mapInstance.fitBounds(bounds, { padding: [50, 50] });
+  }
 }
 
 // Event listeners
