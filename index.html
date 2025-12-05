@@ -753,36 +753,37 @@
                 </div>
 
                 <!-- Map Section with Legend -->
-                <div class="bg-gray-800 p-4 rounded-lg shadow-xl">
+                <div
+                  class="bg-gray-800/50 backdrop-blur-sm border border-gray-700 rounded-xl p-6"
+                >
                   <h3
                     class="text-xl font-semibold text-white mb-4 flex items-center gap-2"
                   >
                     <i data-lucide="map" class="w-5 h-5"></i>
                     Distribution Routes Map (Multimodal)
                   </h3>
+
+                  <!-- Map container with explicit height -->
                   <div
-                    class="h-96 w-full bg-gray-700 rounded-lg shadow-lg overflow-hidden"
-                  >
-                    <div id="plan-map" class="h-full w-full"></div>
-                  </div>
-                  <!-- Multimodal Legend -->
-                  <div class="flex flex-wrap gap-6 mt-3 text-sm">
+                    id="plan-map"
+                    style="height: 500px; width: 100%; border-radius: 0.5rem"
+                  ></div>
+
+                  <!-- Legend -->
+                  <div class="flex items-center gap-6 mt-4 text-sm">
                     <div class="flex items-center gap-2">
-                      <span
-                        class="inline-block w-6 h-1 rounded bg-blue-400"
-                      ></span>
+                      <div class="w-4 h-1 bg-blue-500"></div>
                       <span class="text-gray-300">Road Transport</span>
                     </div>
                     <div class="flex items-center gap-2">
-                      <span
-                        class="inline-block w-6 h-1 rounded bg-green-400"
-                      ></span>
+                      <div class="w-4 h-1 bg-green-500"></div>
                       <span class="text-gray-300">Boat Transport</span>
                     </div>
                     <div class="flex items-center gap-2">
-                      <span
-                        class="inline-block w-6 h-1 rounded bg-yellow-300"
-                      ></span>
+                      <div
+                        class="w-4 h-1 bg-yellow-500"
+                        style="border-top: 2px dashed"
+                      ></div>
                       <span class="text-gray-300">Air Transport</span>
                     </div>
                   </div>

@@ -1,3 +1,6 @@
 Flask
-google-api-python-client
+flask-cors
+requests
 ortools
+scipy
+gunicorn

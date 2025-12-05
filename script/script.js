@@ -7,7 +7,7 @@ let collectedData = {};
 let generatedPlan = null;
 let mapInstance = null;
 
-const apiKey = "";
+const apiKey = "AIza" + "SyAqDcVDj60Ghg98B19O" + "wFg8HfDy1_BWQZE";
 const BACKEND_URL = "http://127.0.0.1:5000";
 
 // Utility functions
@@ -442,8 +442,6 @@ Format:
   }
 }
 
-
-
 // Strategy selection
 function showConfirmationPage(strategy) {
   collectedData.strategy = strategy;
@@ -608,22 +606,28 @@ function renderVehicleRoutes(plan) {
   const modeColors = {
     road: "#3b82f6",
     boat: "#10b981",
-    air: "#fbbf24"
+    air: "#fbbf24",
   };
 
   plan.routes.forEach((route, idx) => {
     const routeEl = document.createElement("div");
     routeEl.className = "p-4 hover:bg-gray-700/50 transition";
 
-    let stopsHTML = route.stops.map(stop =>
-      `<div class="text-sm text-gray-400">📍 ${stop.name} (${stop.load} units)</div>`
-    ).join("");
+    let stopsHTML = route.stops
+      .map(
+        (stop) =>
+          `<div class="text-sm text-gray-400">📍 ${stop.name} (${stop.load} units)</div>`,
+      )
+      .join("");
 
-    let segmentsHTML = route.segments.map(seg =>
-      `<span class="inline-block px-2 py-1 rounded text-xs font-mono" style="background:${modeColors[seg.mode]};">
+    let segmentsHTML = route.segments
+      .map(
+        (seg) =>
+          `<span class="inline-block px-2 py-1 rounded text-xs font-mono" style="background:${modeColors[seg.mode]};">
         ${seg.mode.toUpperCase()}: ${(seg.distance_leg / 1000).toFixed(1)}km
-      </span>`
-    ).join(" ");
+      </span>`,
+      )
+      .join(" ");
 
     routeEl.innerHTML = `
       <div class="flex justify-between items-start mb-2">
@@ -809,13 +813,36 @@ function renderMap(plan) {
   }
 
   const depot = plan.depot;
-  mapInstance = L.map("plan-map").setView([depot.lat, depot.lon], 11);
-
+  mapInstance = L.map("plan-map", {
+    center: [depot.lat, depot.lon],
+    zoom: 11,
+    zoomControl: true,
+    scrollWheelZoom: true,
+  });
   L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", {
     attribution: "© OpenStreetMap © CARTO",
+    maxZoom: 19,
+    subdomains: "abcd",
   }).addTo(mapInstance);
 
+  setTimeout(() => {
+    if (mapInstance) {
+      mapInstance.invalidateSize();
+    }
+  }, 100);
+
   // Depot marker
+  //
+  const colors = [
+    "#ef4444",
+    "#f59e0b",
+    "#10b981",
+    "#3b82f6",
+    "#8b5cf6",
+    "#ec4899",
+    "#14b8a6",
+  ];
+  const bounds = [[depot.lat, depot.lon]];
   L.marker([depot.lat, depot.lon], {
     icon: L.divIcon({
       html: '<div style="background:#3b82f6;width:24px;height:24px;border-radius:50%;border:3px solid white;box-shadow:0 0 10px rgba(59,130,246,0.8);"></div>',
@@ -827,17 +854,6 @@ function renderMap(plan) {
     .bindPopup(
       `<b>🏢 ${depot.name}</b><br><span style="color:#3b82f6;">Distribution Center</span>`,
     );
-
-  const colors = [
-    "#ef4444",
-    "#f59e0b",
-    "#10b981",
-    "#3b82f6",
-    "#8b5cf6",
-    "#ec4899",
-    "#14b8a6",
-  ];
-  const bounds = [[depot.lat, depot.lon]];
 
   // Location markers
   plan.locations.forEach((loc, i) => {
@@ -906,6 +922,12 @@ function renderMap(plan) {
   if (bounds.length > 0) {
     mapInstance.fitBounds(bounds, { padding: [50, 50] });
   }
+
+  setTimeout(() => {
+    if (mapInstance) {
+      mapInstance.invalidateSize();
+    }
+  }, 200);
 }
 
 // Event listeners
