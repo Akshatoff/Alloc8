@@ -7,8 +7,9 @@ let collectedData = {};
 let generatedPlan = null;
 let mapInstance = null;
 
-const apiKey = "AIza" + "SyAqDcVDj60Ghg98B19O" + "wFg8HfDy1_BWQZE";
-const BACKEND_URL = "https://alloc-backend.onrender.com";
+const apiKey = "AIza" + "SyDo0TwbbZuBepObZKl98jaDuzm" + "79Tujrk0";
+
+const BACKEND_URL = "https://web-production-4e830.up.railway.app";
 
 // Utility functions
 function showPage(pageId) {
